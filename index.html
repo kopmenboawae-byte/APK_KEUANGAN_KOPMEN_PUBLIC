@@ -5218,12 +5218,14 @@
       if (!db || !data || !Array.isArray(data.transaksi)) throw new Error('Data restore tidak valid');
       const currentSettings = await getAll('settings');
       const localFolderRecord = currentSettings.find(x => x.id === FS_HANDLE_ID) || null;
-      const stores = ['transaksi', 'settings'];
+      const stores = ['transaksi'];
+      const hasSettings = Array.isArray(data.settings) || (data.settings && typeof data.settings === 'object');
+      if (hasSettings) stores.push('settings');
       if (Array.isArray(data.transaksi_arsip) && db.objectStoreNames.contains('transaksi_arsip')) stores.push('transaksi_arsip');
       if (Array.isArray(data.audit_log) && db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
       if (Array.isArray(data.bk_rekening) && db.objectStoreNames.contains('bk_rekening')) stores.push('bk_rekening');
       const settingsRows = Array.isArray(data.settings) ? data.settings.slice() : (data.settings && typeof data.settings === 'object' ? [data.settings] : []);
-      if (localFolderRecord && !settingsRows.some(x => x && x.id === FS_HANDLE_ID)) settingsRows.push(localFolderRecord);
+      if (hasSettings && localFolderRecord && !settingsRows.some(x => x && x.id === FS_HANDLE_ID)) settingsRows.push(localFolderRecord);
       await new Promise((resolve, reject) => {
         let tx;
         try {
@@ -5234,7 +5236,7 @@
             (rows || []).forEach(row => store.put(row));
           };
           replaceRows('transaksi', data.transaksi);
-          replaceRows('settings', settingsRows);
+          if (stores.includes('settings')) replaceRows('settings', settingsRows);
           if (stores.includes('transaksi_arsip')) replaceRows('transaksi_arsip', data.transaksi_arsip);
           if (stores.includes('audit_log')) replaceRows('audit_log', data.audit_log);
           if (stores.includes('bk_rekening')) replaceRows('bk_rekening', data.bk_rekening);
