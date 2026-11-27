@@ -2045,6 +2045,37 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
+        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
+          Catat nilai stok hasil opname pada tanggal tertentu. Laporan HPP hanya memakai snapshot jika tanggal opname sama dengan tanggal akhir laporan dan saldo pembuka periode tersedia. Jika tidak, laporan akan menandai HPP sebagai estimasi.
+        </p>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Tanggal Stok Opname</label>
+            <input type="date" id="soTanggal" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label>Nilai Persediaan Akhir (Rp)</label>
+            <input type="text" id="soNilai" class="form-control input-rp" inputmode="numeric" value="Rp 0" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Catatan / Dasar Penilaian</label>
+          <input type="text" id="soCatatan" class="form-control" placeholder="Contoh: hasil opname fisik dan penilaian per tanggal" />
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()">Simpan Stok Opname</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()">Tambah Saldo Sumber 20/11/2026</button>
+        </div>
+        <div id="soSummary" style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;"></div>
+        <div class="table-wrap" style="max-height:220px;">
+          <table>
+            <thead><tr><th>Tanggal</th><th class="text-right">Nilai Stok</th><th>Catatan</th><th></th></tr></thead>
+            <tbody id="soTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title">AKTIVA TETAP — Saldo Awal</div>
         <div class="form-group">
           <label>Inventaris</label>
@@ -2267,8 +2298,8 @@
   <script>
     // ===================== CONFIG & CONSTANTS =====================
     const DB_NAME = 'LUDJU_REPORT_DB';
-    const DB_VERSION = 10; // Pro 2026: +piutang · neraca lengkap (v10 agar kompatibel dgn DB lama lebih tinggi)
-    const APP_VERSION = '1.8.0-Pro';
+    const DB_VERSION = 11; // v11: stok opname bertanggal
+    const APP_VERSION = '1.9.0-Pro';
     const FS_HANDLE_ID = 'fs_backup_dir';
 
     /**
@@ -2277,13 +2308,14 @@
      */
     const LUDJU = {
       version: APP_VERSION,
-      modules: ['db', 'transaksi', 'kas', 'sibuhar', 'bonkas', 'piutang', 'laporan', 'backup', 'security', 'archive', 'dashboard', 'import'],
+      modules: ['db', 'transaksi', 'kas', 'sibuhar', 'bonkas', 'piutang', 'stokopname', 'laporan', 'backup', 'security', 'archive', 'dashboard', 'import'],
       catalog: [
-        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v10 · store transaksi, settings, BK, arsip, snapshot, piutang' },
+        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v11 · transaksi, settings, BK, arsip, snapshot, stok opname' },
         { id: 'transaksi', nama: 'Transaksi', status: 'aktif', ket: 'CRUD · filter · kontrak data resmi' },
         { id: 'kas', nama: 'Kas Harian', status: 'aktif', ket: 'Mutasi kas buku · tanpa BK & Titipan' },
         { id: 'sibuhar', nama: 'Sibuhar', status: 'aktif', ket: 'Stor / Tarik · saldo berjalan' },
         { id: 'bonkas', nama: 'Bon Kas (BK)', status: 'aktif', ket: 'Master rekening · mutasi · detail' },
+        { id: 'stokopname', nama: 'Stok Opname', status: 'aktif', ket: 'Snapshot nilai persediaan bertanggal · dasar HPP' },
         { id: 'tutupjurnal', nama: 'Tutup Jurnal Harian', status: 'aktif', ket: 'Pecahan uang · cocokkan indikator laci' },
         { id: 'laporan', nama: 'Laporan', status: 'aktif', ket: 'Neraca lengkap · Laba Rugi HPP · Penjelasan · Arus Kas' },
         { id: 'dashboard', nama: 'Dashboard', status: 'aktif', ket: 'Ringkasan · Indikator Laci sebelum tutup jurnal' },
@@ -2471,6 +2503,10 @@
           // v1.3 — cadangan internal (last good snapshot)
           if (!database.objectStoreNames.contains('internal_backup')) {
             database.createObjectStore('internal_backup', { keyPath: 'id' });
+          }
+          if (!database.objectStoreNames.contains('stok_opname')) {
+            const so = database.createObjectStore('stok_opname', { keyPath: 'id' });
+            so.createIndex('tanggal', 'tanggal', { unique: false });
           }
         };
         req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -2712,7 +2748,7 @@
       if (name === 'tutupjurnal') loadTutupJurnal();
       if (name === 'laporan') loadLaporan();
       if (name === 'import') { updateDbInfo(); loadBkMasterTable(); updateArchiveInfo(); }
-      if (name === 'settings') { loadSettingsForm(); updatePinStatusUI(); renderLudjuModuleTable(); initAllRpInputs(document.getElementById('page-settings')); }
+      if (name === 'settings') { loadSettingsForm(); loadStokOpname(); updatePinStatusUI(); renderLudjuModuleTable(); initAllRpInputs(document.getElementById('page-settings')); }
     }
 
     // ===================== PIUTANG DAGANG =====================
