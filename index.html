@@ -2854,6 +2854,80 @@
       loadDashboard();
     }
 
+    async function loadStokOpname() {
+      const tbody = document.getElementById('soTableBody');
+      if (!tbody) return;
+      if (!db || !db.objectStoreNames.contains('stok_opname')) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">Store stok opname belum tersedia. Muat ulang aplikasi.</td></tr>';
+        return;
+      }
+      const rows = await getAll('stok_opname');
+      rows.sort((a,b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
+      const latest = rows[0];
+      const summary = document.getElementById('soSummary');
+      if (summary) summary.textContent = latest
+        ? 'Snapshot terbaru: ' + formatTgl(latest.tanggal) + ' · ' + formatRp(latest.nilai) + '. Laporan hanya memakai snapshot yang tanggalnya tepat sama dengan tanggal akhir laporan.'
+        : 'Belum ada stok opname. HPP masih memakai estimasi dari laba POS.';
+      const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
+      tbody.innerHTML = rows.length ? rows.map(r => `<tr>
+        <td>${esc(formatTgl(r.tanggal))}</td>
+        <td class="text-right">${formatRp(r.nilai || 0)}</td>
+        <td>${esc(r.catatan || '—')}</td>
+        <td><button class="btn btn-outline btn-sm" type="button" onclick="deleteStokOpname('${esc(r.id)}')">Hapus</button></td>
+      </tr>`).join('') : '<tr><td colspan="4" class="empty">Belum ada catatan stok opname</td></tr>';
+      const dateInput = document.getElementById('soTanggal');
+      if (dateInput && !dateInput.value) dateInput.value = todayStr();
+    }
+
+    async function saveStokOpname() {
+      const tanggal = (document.getElementById('soTanggal') || {}).value || '';
+      const nilai = getRpValue('soNilai');
+      const catatan = ((document.getElementById('soCatatan') || {}).value || '').trim();
+      if (!tanggal || !Number.isFinite(nilai) || nilai < 0) { toast('Tanggal dan nilai stok opname wajib valid.', 'error'); return; }
+      const id = 'SO-' + tanggal;
+      const all = await getAll('stok_opname');
+      const existing = all.find(r => r.id === id);
+      if (existing && !confirm('Snapshot tanggal ini sudah ada. Ganti nilai/catatannya?')) return;
+      const now = new Date().toISOString();
+      await put('stok_opname', { id, tanggal, nilai: Math.round(nilai), catatan, created_at: existing ? existing.created_at : now, updated_at: now });
+      markDataChanged();
+      await loadStokOpname();
+      loadDashboard();
+      toast(existing ? 'Stok opname diperbarui' : 'Stok opname disimpan', 'success');
+    }
+
+    async function seedStokOpnameSumber() {
+      const id = 'SO-2026-11-20';
+      const all = await getAll('stok_opname');
+      const existing = all.find(r => r.id === id);
+      if (existing && !confirm('Snapshot sumber 20/11/2026 sudah ada. Ganti dengan nilai laporan sumber Rp25.057.960?')) return;
+      if (!existing && !confirm('Tambahkan nilai persediaan akhir dari workbook sumber per 20/11/2026 sebesar Rp25.057.960? Nilai ini belum membuktikan opname fisik.')) return;
+      const now = new Date().toISOString();
+      await put('stok_opname', {
+        id, tanggal: '2026-11-20', nilai: 25057960,
+        catatan: 'Saldo akhir menurut workbook sumber LUDJU_labarugi_20261120; perlu verifikasi fisik.',
+        created_at: existing ? existing.created_at : now, updated_at: now
+      });
+      markDataChanged();
+      await loadStokOpname();
+      toast('Snapshot sumber 20/11/2026 ditambahkan; verifikasi fisik tetap diperlukan.', 'success');
+    }
+
+    async function deleteStokOpname(id) {
+      if (!confirm('Hapus catatan stok opname ini? HPP untuk periode terkait akan kembali memakai dasar estimasi bila tidak ada snapshot pengganti.')) return;
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('stok_opname', 'readwrite');
+        tx.objectStore('stok_opname').delete(id);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error || new Error('Hapus stok opname gagal'));
+        tx.onabort = () => reject(tx.error || new Error('Hapus stok opname dibatalkan'));
+      });
+      markDataChanged();
+      await loadStokOpname();
+      loadDashboard();
+      toast('Catatan stok opname dihapus', 'success');
+    }
+
     function loadSettingsForm() {
       document.getElementById('setNamaUsaha').value = settings.namaUsaha || '';
       document.getElementById('setPeriode').value = settings.periode || '2026';
