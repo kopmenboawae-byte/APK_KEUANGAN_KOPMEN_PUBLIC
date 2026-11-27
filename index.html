@@ -5362,6 +5362,7 @@
       if (Array.isArray(data.transaksi_arsip) && db.objectStoreNames.contains('transaksi_arsip')) stores.push('transaksi_arsip');
       if (Array.isArray(data.audit_log) && db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
       if (Array.isArray(data.bk_rekening) && db.objectStoreNames.contains('bk_rekening')) stores.push('bk_rekening');
+      if (Array.isArray(data.stok_opname) && db.objectStoreNames.contains('stok_opname')) stores.push('stok_opname');
       const settingsRows = Array.isArray(data.settings) ? data.settings.slice() : (data.settings && typeof data.settings === 'object' ? [data.settings] : []);
       if (hasSettings && localFolderRecord && !settingsRows.some(x => x && x.id === FS_HANDLE_ID)) settingsRows.push(localFolderRecord);
       await new Promise((resolve, reject) => {
@@ -5378,6 +5379,7 @@
           if (stores.includes('transaksi_arsip')) replaceRows('transaksi_arsip', data.transaksi_arsip);
           if (stores.includes('audit_log')) replaceRows('audit_log', data.audit_log);
           if (stores.includes('bk_rekening')) replaceRows('bk_rekening', data.bk_rekening);
+          if (stores.includes('stok_opname')) replaceRows('stok_opname', data.stok_opname);
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => reject(tx.error || new Error('Restore database gagal'));
           tx.onabort = () => reject(tx.error || new Error('Restore database dibatalkan'));
@@ -5391,11 +5393,13 @@
       const setCount = Array.isArray(data.settings) ? data.settings.length : (data.settings ? 1 : 0);
       const archiveCount = Array.isArray(data.transaksi_arsip) ? data.transaksi_arsip.length : null;
       const auditCount = Array.isArray(data.audit_log) ? data.audit_log.length : null;
+      const stocktakeCount = Array.isArray(data.stok_opname) ? data.stok_opname.length : null;
       const message = 'Restore ' + data.transaksi.length + ' transaksi' +
         (bkCount ? ' + ' + bkCount + ' rekening BK' : '') +
         (setCount ? ' + pengaturan' : '') +
         (archiveCount !== null ? ' + ' + archiveCount + ' arsip' : ' + arsip lama dipertahankan') +
         (auditCount !== null ? ' + ' + auditCount + ' log audit' : ' + log audit lama dipertahankan') +
+        (stocktakeCount !== null ? ' + ' + stocktakeCount + ' stok opname' : ' + stok opname lama dipertahankan') +
         '?\nData yang tercakup dalam backup akan menggantikan data saat ini.';
       if (!confirm(message)) return false;
       await saveInternalSnapshot(await buildBackupPayload());
@@ -5426,6 +5430,7 @@
     async function buildBackupPayload() {
       const trx = await getAll('transaksi');
       const arsip = db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : [];
+      const stocktakes = db.objectStoreNames.contains('stok_opname') ? await getAll('stok_opname') : [];
       const audit = db.objectStoreNames.contains('audit_log') ? await getAll('audit_log') : [];
       // Jangan sertakan handle filesystem atau snapshot internal (menghindari backup bersarang).
       const set = (await getAll('settings')).filter(s => s.id !== FS_HANDLE_ID);
@@ -5435,12 +5440,13 @@
         version: APP_VERSION,
         exported_at: new Date().toISOString(),
         type: 'ludju-backup',
-        coverage: ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings'],
+        coverage: ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings', 'stok_opname'],
         settings: set,
         transaksi: trx,
         transaksi_arsip: arsip,
         audit_log: audit,
-        bk_rekening: bk
+        bk_rekening: bk,
+        stok_opname: stocktakes
       };
     }
 
@@ -5458,7 +5464,7 @@
       backupInProgress = true;
       try {
         const data = await buildBackupPayload();
-        data.coverage = ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings'];
+        data.coverage = ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings', 'stok_opname'];
         const json = JSON.stringify(data);
         const blob = new Blob([json], { type: 'application/json' });
         const sizeKb = Math.round(blob.size / 1024);
@@ -5499,7 +5505,7 @@
         settings.lastBackupAt = new Date().toISOString();
         settings.lastBackupCount = (data.transaksi || []).length;
         settings.lastBackupMethod = method;
-        settings.lastBackupCoverage = Array.isArray(data.transaksi_arsip) && Array.isArray(data.audit_log);
+        settings.lastBackupCoverage = Array.isArray(data.transaksi_arsip) && Array.isArray(data.audit_log) && Array.isArray(data.stok_opname);
         settings.id = 'app';
         await put('settings', settings);
         // Cadangan internal selalu disimpan (tahan clear-download / gagal unduh)
@@ -5595,7 +5601,7 @@
         const via = settings.lastBackupMethod === 'folder' ? ' · via folder' : '';
         text = `Terakhir: ${tgl} ${jam} · ${settings.lastBackupCount || 0} transaksi aktif${via}`;
         text += settings.lastBackupCoverage
-          ? ' · arsip & log audit tercakup'
+          ? ' · arsip, log audit & stok opname tercakup'
           : ' · backup lama: arsip/log audit belum terjamin, buat backup baru';
       } else {
         text = 'Belum pernah backup. Klik “Backup Sekarang”.';
