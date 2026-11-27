@@ -3803,7 +3803,9 @@
                 `Catatan Saldo Bon Kas (BK) — tanggungan pemegang: ${formatRp(s.saldoBk)}.\n` +
                 `Kas (Kas Real + Saldo BK) — informasi manajemen, bukan kas fisik dan tidak ditambahkan ke total aktiva: ${formatRp(kasGabungan)}.\n` +
                 `Sesuai kebijakan penyajian internal KOPMEN, saldo BK dicatat terpisah dari total aktiva; perlakuan ini perlu diungkapkan saat laporan digunakan di luar internal.\n` +
-                `Selisih Aktiva−Pasiva: ${formatRp(selisihNeraca)}.`
+                `Selisih Aktiva−Pasiva: ${formatRp(selisihNeraca)}.` +
+                (p.stocktakeDate ? `\nStok opname tercatat per ${formatTgl(p.stocktakeDate)}: ${formatRp(s.saldoPersediaan)}.` : '') +
+                (p.inventoryWarning ? `\nPERHATIAN PERSEDIAAN: ${p.inventoryWarning}` : '')
         });
         return { rows, meta: { aktivaLancar, aktivaTetap, totalAktiva, pasivaLancar, pasivaTetap, totalPasiva } };
       }
@@ -3843,6 +3845,9 @@
         rows.push({ label: 'Rugi / SHU Setelah Pajak', value: rugiSetelahPajak, bold: true, border: true });
 
         rows.push({ note: 'Struktur HPP: Persediaan Awal + Pembelian − Persediaan Akhir. Detail biaya per pos (Lembur, Bensin, Fee, dll.) dapat dilengkapi via transaksi jenis BIAYA dengan keterangan.' });
+        rows.push({ note: 'Laba pada kolom POS hanya referensi operasional; bukan sumber HPP resmi.' });
+        if (p.stocktakeDate) rows.push({ note: 'Snapshot persediaan akhir: ' + formatTgl(p.stocktakeDate) + ' · ' + formatRp(p.persediaanAkhir) });
+        if (p.inventoryWarning) rows.push({ note: 'PERHATIAN PERSEDIAAN: ' + p.inventoryWarning });
         return { rows, meta: { penjualan, hpp, labaKotor, rugiSetelahPajak } };
       }
 
