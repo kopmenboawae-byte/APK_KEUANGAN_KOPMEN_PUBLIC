@@ -5214,16 +5214,50 @@
       }
     }
 
+    async function restoreStoresAtomic(data) {
+      if (!db || !data || !Array.isArray(data.transaksi)) throw new Error('Data restore tidak valid');
+      const currentSettings = await getAll('settings');
+      const localFolderRecord = currentSettings.find(x => x.id === FS_HANDLE_ID) || null;
+      const stores = ['transaksi', 'settings'];
+      if (Array.isArray(data.transaksi_arsip) && db.objectStoreNames.contains('transaksi_arsip')) stores.push('transaksi_arsip');
+      if (Array.isArray(data.audit_log) && db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
+      if (Array.isArray(data.bk_rekening) && db.objectStoreNames.contains('bk_rekening')) stores.push('bk_rekening');
+      const settingsRows = Array.isArray(data.settings) ? data.settings.slice() : (data.settings && typeof data.settings === 'object' ? [data.settings] : []);
+      if (localFolderRecord && !settingsRows.some(x => x && x.id === FS_HANDLE_ID)) settingsRows.push(localFolderRecord);
+      await new Promise((resolve, reject) => {
+        let tx;
+        try {
+          tx = db.transaction(stores, 'readwrite');
+          const replaceRows = (name, rows) => {
+            const store = tx.objectStore(name);
+            store.clear();
+            (rows || []).forEach(row => store.put(row));
+          };
+          replaceRows('transaksi', data.transaksi);
+          replaceRows('settings', settingsRows);
+          if (stores.includes('transaksi_arsip')) replaceRows('transaksi_arsip', data.transaksi_arsip);
+          if (stores.includes('audit_log')) replaceRows('audit_log', data.audit_log);
+          if (stores.includes('bk_rekening')) replaceRows('bk_rekening', data.bk_rekening);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('Restore database gagal'));
+          tx.onabort = () => reject(tx.error || new Error('Restore database dibatalkan'));
+        } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } reject(e); }
+      });
+    }
+
     async function validateBackupTransactionIntegrity(data) {
       if (!data || !Array.isArray(data.transaksi)) throw new Error('Format backup tidak valid');
-      if (!confirm(`Restore ${data.transaksi.length} transaksi` +
-        (bkCount ? ` + ${bkCount} rekening BK` : '') +
-        (setCount ? ` + pengaturan` : '') +
-        (archiveCount !== null ? ` + ${archiveCount} arsip` : ' + arsip lama dipertahankan') +
-        (auditCount !== null ? ` + ${auditCount} log audit` : ' + log audit lama dipertahankan') +
-        `?\nData yang tercakup dalam backup akan menggantikan data saat ini.`)) return false;
-
-      // Snapshot kondisi saat ini sebelum restore, sebagai jalur pemulihan jika backup salah.
+      const bkCount = Array.isArray(data.bk_rekening) ? data.bk_rekening.length : 0;
+      const setCount = Array.isArray(data.settings) ? data.settings.length : (data.settings ? 1 : 0);
+      const archiveCount = Array.isArray(data.transaksi_arsip) ? data.transaksi_arsip.length : null;
+      const auditCount = Array.isArray(data.audit_log) ? data.audit_log.length : null;
+      const message = 'Restore ' + data.transaksi.length + ' transaksi' +
+        (bkCount ? ' + ' + bkCount + ' rekening BK' : '') +
+        (setCount ? ' + pengaturan' : '') +
+        (archiveCount !== null ? ' + ' + archiveCount + ' arsip' : ' + arsip lama dipertahankan') +
+        (auditCount !== null ? ' + ' + auditCount + ' log audit' : ' + log audit lama dipertahankan') +
+        '?\nData yang tercakup dalam backup akan menggantikan data saat ini.';
+      if (!confirm(message)) return false;
       await saveInternalSnapshot(await buildBackupPayload());
       await restoreStoresAtomic(data);
       await loadSettings();
@@ -5241,6 +5275,14 @@
       return true;
     }
 
+    async function restoreDBFromText(text) {
+      let data;
+      try { data = JSON.parse(String(text || '')); }
+      catch (e) { throw new Error('File backup bukan JSON yang valid'); }
+      if (!data || !Array.isArray(data.transaksi)) throw new Error('File tidak berisi data backup transaksi yang valid');
+      if (data.type && data.type !== 'ludju-backup') throw new Error('Jenis file tidak dikenali sebagai backup aplikasi');
+      return await validateBackupTransactionIntegrity(data);
+    }
     async function buildBackupPayload() {
       const trx = await getAll('transaksi');
       const arsip = db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : [];
@@ -5453,13 +5495,8 @@
       }
       if (!confirm(`Pulihkan ${snap.payload.transaksi.length} transaksi dari cadangan internal?\nDisimpan: ${snap.saved_at || '—'}\nData aktif akan diganti.`)) return;
       const data = snap.payload;
-      await validateBackupTransactionIntegrity(data);
-      await restoreStoresAtomic(data);
-      await loadSettings();
-      pinHash = settings.pinHash || null;
-      passHash = settings.passHash || null;
-      lastChangeAt = Date.now();
-      lastBackupAt = Date.now();
+      const restored = await validateBackupTransactionIntegrity(data);
+      if (!restored) return;
       toast('Dipulihkan dari cadangan internal', 'success');
       updateDbInfo();
       loadDashboard();
