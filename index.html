@@ -2024,8 +2024,9 @@
       <div class="card">
         <div class="card-title">AKTIVA LANCAR — Saldo Awal</div>
         <div class="form-group">
-          <label>Saldo Awal Kas Toko</label>
+          <label>Saldo Awal Kas Gabungan (Kas Real + BK)</label>
           <input type="text" id="setSaldoKas" class="form-control input-rp" inputmode="numeric" />
+          <p style="font-size:0.72rem;color:var(--muted);margin:4px 0 0;">Isi saldo kas gabungan termasuk saldo Bon Kas. Sistem mengurangi saldo BK untuk memperoleh Kas Real; jangan isi hanya kas fisik.</p>
         </div>
         <div class="form-group">
           <label>Saldo Awal Sibuhar</label>
@@ -2436,7 +2437,7 @@
       namaUsaha: 'Kopmen Boawae Sejahtera',
       periode: '2026',
       // === AKTIVA (Saldo Awal) ===
-      saldoAwalKas: 0,
+      saldoAwalKas: 0, // saldo kas gabungan awal (Kas Real + BK)
       saldoAwalSibuhar: 0,
       saldoAwalPersediaan: 0,
       saldoAwalPiutang: 0,
@@ -5971,7 +5972,7 @@
         sum.innerHTML = `
           <table>
             <tr><td colspan="2"><strong>AKTIVA</strong></td></tr>
-            <tr><td>Kas Toko</td><td class="text-right">${formatRp(settings.saldoAwalKas||0)}</td></tr>
+            <tr><td>Kas Gabungan Awal (Kas Real + BK)</td><td class="text-right">${formatRp(settings.saldoAwalKas||0)}</td></tr>
             <tr><td>Sibuhar</td><td class="text-right">${formatRp(settings.saldoAwalSibuhar||0)}</td></tr>
             <tr><td>Persediaan</td><td class="text-right">${formatRp(settings.saldoAwalPersediaan||0)}</td></tr>
             <tr><td>Piutang</td><td class="text-right">${formatRp(settings.saldoAwalPiutang||0)}</td></tr>
