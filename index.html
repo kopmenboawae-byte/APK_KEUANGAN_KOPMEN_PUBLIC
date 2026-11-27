@@ -4717,8 +4717,8 @@
         String(row.lokasi || '').toUpperCase(),
         Number(row.nilai) || 0,
         Number(row.laba) || 0,
-        String(row.keterangan || '').trim().replace(/\\s+/g, ' ')
-      ].join('\\u001f');
+        String(row.keterangan || '').trim().replace(/\s+/g, ' ')
+      ].join('\u001f');
     }
 
     function makeImportRowId(row, occurrence) {
