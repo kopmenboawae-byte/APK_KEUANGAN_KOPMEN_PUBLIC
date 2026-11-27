@@ -3704,11 +3704,16 @@
         : (settings.saldoAwalPersediaan || 0) + beliBeforeFiscal - hppBeforeFiscal;
       const hppFiscal = persediaanAwalFiscal + fiscalBeli - saldoPersediaan;
       const labaBersihKumulatif = fiscalPenjualan - hppFiscal + fiscalTerima - fiscalBiaya - fiscalKeluar;
+      const saldoPiutangRaw = piut;
+      const saldoHutangRaw = hut;
+      const saldoAnomalies = [];
+      if (saldoPiutangRaw < 0) saldoAnomalies.push('Piutang bersaldo negatif (' + formatRp(saldoPiutangRaw) + '); periksa pembayaran berlebih atau uang muka pelanggan.');
+      if (saldoHutangRaw < 0) saldoAnomalies.push('Hutang bersaldo negatif (' + formatRp(saldoHutangRaw) + '); periksa pembayaran berlebih atau uang muka pemasok.');
 
       return {
         period: { from, to, kasMasuk, kasKeluar, jualTunai, jualLelang, jualKredit, penjualan, laba, hpp, beli, beliTunai, beliKredit,
                   persediaanAwal: persediaanAwalPeriode, persediaanAkhir: saldoPersediaan, hppPersediaan, inventoryBasis, inventoryWarning, stocktakeDate: stocktakeClosing ? stocktakeClosing.tanggal : null,
-                  saldoKasAwalPeriode: saldoKas - (kasMasuk - kasKeluar), saldoKasAkhirPeriode: saldoKas,
+                  saldoKasAwalPeriode: saldoKas - (kasMasuk - kasKeluar), saldoKasAkhirPeriode: saldoKas, saldoPiutangRaw, saldoHutangRaw, saldoAnomalies,
                   labaBersihKumulatif, fiscalYearStart,
                   bayarBon, pelunasan, bonKas, bayarBk, biaya, terimaLain, keluarLain, titipan,
                   sibuharStor, sibuharTarik, labaKotor, labaBersih },
@@ -3817,6 +3822,7 @@
                 `Kas (Kas Real + Saldo BK) — informasi manajemen, bukan kas fisik dan tidak ditambahkan ke total aktiva: ${formatRp(kasGabungan)}.\n` +
                 `Sesuai kebijakan penyajian internal KOPMEN, saldo BK dicatat terpisah dari total aktiva; perlakuan ini perlu diungkapkan saat laporan digunakan di luar internal.\n` +
                 `Selisih Aktiva−Pasiva: ${formatRp(selisihNeraca)}.` +
+                (p.saldoAnomalies && p.saldoAnomalies.length ? `\nPERHATIAN PIUTANG/HUTANG: ${p.saldoAnomalies.join(' ')}` : '') +
                 (p.stocktakeDate ? `\nStok opname tercatat per ${formatTgl(p.stocktakeDate)}: ${formatRp(s.saldoPersediaan)}.` : '') +
                 (p.inventoryWarning ? `\nPERHATIAN PERSEDIAAN: ${p.inventoryWarning}` : '')
         });
