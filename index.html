@@ -2063,6 +2063,10 @@
           <label>Catatan / Dasar Penilaian</label>
           <input type="text" id="soCatatan" class="form-control" placeholder="Contoh: hasil opname fisik dan penilaian per tanggal" />
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;margin-bottom:10px;">
+          <input type="checkbox" id="soVerified" />
+          Sudah diverifikasi melalui opname fisik dan penilaian stok
+        </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()">Simpan Stok Opname</button>
           <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()">Tambah Saldo Sumber 20/11/2026</button>
@@ -2070,7 +2074,7 @@
         <div id="soSummary" style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;"></div>
         <div class="table-wrap" style="max-height:220px;">
           <table>
-            <thead><tr><th>Tanggal</th><th class="text-right">Nilai Stok</th><th>Catatan</th><th></th></tr></thead>
+            <thead><tr><th>Tanggal</th><th class="text-right">Nilai Stok</th><th>Status</th><th>Catatan</th><th></th></tr></thead>
             <tbody id="soTableBody"></tbody>
           </table>
         </div>
@@ -2858,7 +2862,7 @@
       const tbody = document.getElementById('soTableBody');
       if (!tbody) return;
       if (!db || !db.objectStoreNames.contains('stok_opname')) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">Store stok opname belum tersedia. Muat ulang aplikasi.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Store stok opname belum tersedia. Muat ulang aplikasi.</td></tr>';
         return;
       }
       const rows = await getAll('stok_opname');
@@ -2866,15 +2870,16 @@
       const latest = rows[0];
       const summary = document.getElementById('soSummary');
       if (summary) summary.textContent = latest
-        ? 'Snapshot terbaru: ' + formatTgl(latest.tanggal) + ' · ' + formatRp(latest.nilai) + '. Laporan hanya memakai snapshot yang tanggalnya tepat sama dengan tanggal akhir laporan.'
+        ? 'Snapshot terbaru: ' + formatTgl(latest.tanggal) + ' · ' + formatRp(latest.nilai) + ' · ' + (latest.status_verifikasi === 'terverifikasi' ? 'terverifikasi' : 'belum diverifikasi') + '.'
         : 'Belum ada stok opname. HPP masih memakai estimasi dari laba POS.';
       const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
       tbody.innerHTML = rows.length ? rows.map(r => `<tr>
         <td>${esc(formatTgl(r.tanggal))}</td>
         <td class="text-right">${formatRp(r.nilai || 0)}</td>
+        <td>${r.status_verifikasi === 'terverifikasi' ? 'Terverifikasi' : 'Belum diverifikasi'}</td>
         <td>${esc(r.catatan || '—')}</td>
         <td><button class="btn btn-outline btn-sm" type="button" onclick="deleteStokOpname('${esc(r.id)}')">Hapus</button></td>
-      </tr>`).join('') : '<tr><td colspan="4" class="empty">Belum ada catatan stok opname</td></tr>';
+      </tr>`).join('') : '<tr><td colspan="5" class="empty">Belum ada catatan stok opname</td></tr>';
       const dateInput = document.getElementById('soTanggal');
       if (dateInput && !dateInput.value) dateInput.value = todayStr();
     }
@@ -2883,13 +2888,14 @@
       const tanggal = (document.getElementById('soTanggal') || {}).value || '';
       const nilai = getRpValue('soNilai');
       const catatan = ((document.getElementById('soCatatan') || {}).value || '').trim();
+      const status_verifikasi = (document.getElementById('soVerified') || {}).checked ? 'terverifikasi' : 'belum';
       if (!tanggal || !Number.isFinite(nilai) || nilai < 0) { toast('Tanggal dan nilai stok opname wajib valid.', 'error'); return; }
       const id = 'SO-' + tanggal;
       const all = await getAll('stok_opname');
       const existing = all.find(r => r.id === id);
       if (existing && !confirm('Snapshot tanggal ini sudah ada. Ganti nilai/catatannya?')) return;
       const now = new Date().toISOString();
-      await put('stok_opname', { id, tanggal, nilai: Math.round(nilai), catatan, created_at: existing ? existing.created_at : now, updated_at: now });
+      await put('stok_opname', { id, tanggal, nilai: Math.round(nilai), catatan, status_verifikasi, created_at: existing ? existing.created_at : now, updated_at: now });
       markDataChanged();
       await loadStokOpname();
       loadDashboard();
@@ -2906,6 +2912,7 @@
       await put('stok_opname', {
         id, tanggal: '2026-11-20', nilai: 25057960,
         catatan: 'Saldo akhir menurut workbook sumber LUDJU_labarugi_20261120; perlu verifikasi fisik.',
+        status_verifikasi: 'belum',
         created_at: existing ? existing.created_at : now, updated_at: now
       });
       markDataChanged();
@@ -3658,9 +3665,13 @@
       const hppPersediaan = persediaanAwalPeriode + beli - saldoPersediaan;
       const inventoryWarnings = [];
       if (!stocktakeClosing) inventoryWarnings.push('Tidak ada stok opname tepat pada tanggal akhir laporan; HPP dan saldo persediaan masih estimasi dari laba POS.');
-      else if (from !== fiscalYearStartForStock && !openingSnapshotExact) inventoryWarnings.push('Saldo stok pembuka tepat sehari sebelum tanggal mulai belum tersedia; HPP periode masih estimasi.');
+      else {
+        if (stocktakeClosing.status_verifikasi !== 'terverifikasi') inventoryWarnings.push('Snapshot persediaan belum diverifikasi fisik; nilai dipakai sebagai acuan sementara.');
+        if (from !== fiscalYearStartForStock && !openingSnapshotExact) inventoryWarnings.push('Saldo stok pembuka tepat sehari sebelum tanggal mulai belum tersedia; HPP periode masih estimasi.');
+      }
       if (hppPersediaan < 0) inventoryWarnings.push('HPP bernilai negatif; periksa saldo stok, pembelian, dan penyesuaian persediaan.');
-      const inventoryBasis = stocktakeClosing && (from === fiscalYearStartForStock || openingSnapshotExact) && hppPersediaan >= 0 ? 'stocktake' : 'estimate';
+      const inventoryBasis = stocktakeClosing && stocktakeClosing.status_verifikasi === 'terverifikasi' &&
+        (from === fiscalYearStartForStock || openingSnapshotExact) && hppPersediaan >= 0 ? 'stocktake-verified' : 'estimate';
       const inventoryWarning = inventoryWarnings.join(' ');
       const penjualan = jualTunai + jualLelang + jualKredit;
       const labaKotor = penjualan - hppPersediaan;
