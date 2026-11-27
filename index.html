@@ -3547,6 +3547,12 @@
       loadLaporan();
     }
 
+    function previousDateStr(dateStr) {
+      const parts = String(dateStr || '').split('-').map(Number);
+      if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return '';
+      return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1)).toISOString().slice(0, 10);
+    }
+
     async function calcFinancials(from, to) {
       const all = (await getAll('transaksi')).filter(r => r.status_data !== 'dibatalkan');
       const inPeriod = all.filter(r => {
@@ -3636,12 +3642,26 @@
       const saldoBk = bkAwal + bkBon - bkBayar;
       const kasReal = saldoKas - saldoBk;
       const saldoSibuhar = (settings.saldoAwalSibuhar || 0) + sStor - sTarik;
-      const saldoPersediaan = (settings.saldoAwalPersediaan || 0) + beliAll - hppAll;
-
-      // Persediaan awal laporan harus merupakan saldo tepat sebelum tanggal mulai.
-      // Tanpa ini, laporan parsial mencampur pembelian periode dengan stok kumulatif.
-      const persediaanAwalPeriode = (settings.saldoAwalPersediaan || 0) + beliBeforeFrom - hppBeforeFrom;
-      const hppPersediaan = Math.max(0, persediaanAwalPeriode + beli - saldoPersediaan);
+      const legacySaldoPersediaan = (settings.saldoAwalPersediaan || 0) + beliAll - hppAll;
+      const stocktakes = db.objectStoreNames.contains('stok_opname') ? await getAll('stok_opname') : [];
+      stocktakes.sort((a,b) => String(a.tanggal || '').localeCompare(String(b.tanggal || '')));
+      const stocktakeClosing = stocktakes.find(r => r.tanggal === toDate) || null;
+      const stocktakeBeforeFrom = from ? stocktakes.filter(r => r.tanggal < from).slice(-1)[0] : null;
+      const fiscalYearForStock = String(settings.periode || (to || todayStr()).slice(0, 4)).slice(0, 4);
+      const fiscalYearStartForStock = fiscalYearForStock + '-01-01';
+      const openingSnapshotExact = !!(from && stocktakeBeforeFrom && stocktakeBeforeFrom.tanggal === previousDateStr(from));
+      const legacyPersediaanAwalPeriode = (settings.saldoAwalPersediaan || 0) + beliBeforeFrom - hppBeforeFrom;
+      const persediaanAwalPeriode = from === fiscalYearStartForStock
+        ? (settings.saldoAwalPersediaan || 0)
+        : (openingSnapshotExact ? Number(stocktakeBeforeFrom.nilai) || 0 : legacyPersediaanAwalPeriode);
+      const saldoPersediaan = stocktakeClosing ? (Number(stocktakeClosing.nilai) || 0) : legacySaldoPersediaan;
+      const hppPersediaan = persediaanAwalPeriode + beli - saldoPersediaan;
+      const inventoryWarnings = [];
+      if (!stocktakeClosing) inventoryWarnings.push('Tidak ada stok opname tepat pada tanggal akhir laporan; HPP dan saldo persediaan masih estimasi dari laba POS.');
+      else if (from !== fiscalYearStartForStock && !openingSnapshotExact) inventoryWarnings.push('Saldo stok pembuka tepat sehari sebelum tanggal mulai belum tersedia; HPP periode masih estimasi.');
+      if (hppPersediaan < 0) inventoryWarnings.push('HPP bernilai negatif; periksa saldo stok, pembelian, dan penyesuaian persediaan.');
+      const inventoryBasis = stocktakeClosing && (from === fiscalYearStartForStock || openingSnapshotExact) && hppPersediaan >= 0 ? 'stocktake' : 'estimate';
+      const inventoryWarning = inventoryWarnings.join(' ');
       const penjualan = jualTunai + jualLelang + jualKredit;
       const labaKotor = penjualan - hppPersediaan;
       const labaBersih = labaKotor + terimaLain - biaya - keluarLain;
@@ -3666,13 +3686,16 @@
         if (r.jenis === 'PENERIMAAN LAIN-LAIN') fiscalTerima += n;
         if (r.jenis === 'PENGELUARAN LAIN-LAIN') fiscalKeluar += n;
       });
-      const persediaanAwalFiscal = (settings.saldoAwalPersediaan || 0) + beliBeforeFiscal - hppBeforeFiscal;
-      const hppFiscal = Math.max(0, persediaanAwalFiscal + fiscalBeli - saldoPersediaan);
+      const fiscalOpeningSnapshot = stocktakes.find(r => r.tanggal === previousDateStr(fiscalYearStart)) || null;
+      const persediaanAwalFiscal = fiscalOpeningSnapshot
+        ? (Number(fiscalOpeningSnapshot.nilai) || 0)
+        : (settings.saldoAwalPersediaan || 0) + beliBeforeFiscal - hppBeforeFiscal;
+      const hppFiscal = persediaanAwalFiscal + fiscalBeli - saldoPersediaan;
       const labaBersihKumulatif = fiscalPenjualan - hppFiscal + fiscalTerima - fiscalBiaya - fiscalKeluar;
 
       return {
         period: { from, to, kasMasuk, kasKeluar, jualTunai, jualLelang, jualKredit, penjualan, laba, hpp, beli, beliTunai, beliKredit,
-                  persediaanAwal: persediaanAwalPeriode, persediaanAkhir: saldoPersediaan, hppPersediaan,
+                  persediaanAwal: persediaanAwalPeriode, persediaanAkhir: saldoPersediaan, hppPersediaan, inventoryBasis, inventoryWarning, stocktakeDate: stocktakeClosing ? stocktakeClosing.tanggal : null,
                   labaBersihKumulatif, fiscalYearStart,
                   bayarBon, pelunasan, bonKas, bayarBk, biaya, terimaLain, keluarLain, titipan,
                   sibuharStor, sibuharTarik, labaKotor, labaBersih },
