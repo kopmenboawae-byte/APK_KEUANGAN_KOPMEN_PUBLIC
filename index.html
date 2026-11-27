@@ -1803,9 +1803,10 @@
       </div>
       <div class="card">
         <div class="card-title">Master Rekening Bon Kas (BK)</div>
-        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Kelola rekening BK di sini. Dipakai saat input transaksi BON KAS / PEMBAYARAN BK. Pastikan saldo awal sesuai buku sumber.</p>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="openBkRekeningModal()">+ Tambah Rekening</button>
+          <button class="btn btn-outline btn-sm" onclick="seedBkFromDefault()">Isi 24 Rekening Sumber</button>
         </div>
         <div class="table-wrap" style="max-height:260px;">
           <table>
@@ -2891,9 +2892,15 @@
 
       if (r.jenis === 'BON KAS' || r.jenis === 'PEMBAYARAN BK') {
         await fillTrxBkDropdown();
-        if (r.bk_rekening_id) {
-          document.getElementById('trxBkRekening').value = r.bk_rekening_id;
+        let rekeningId = r.bk_rekening_id || '';
+        if (!rekeningId) {
+          const parsedBk = parseBkKeterangan(r.keterangan);
+          if (parsedBk) {
+            const matches = (await getAllBkRekening()).filter(a => normNba(a.nba) === parsedBk.key);
+            if (matches.length === 1) rekeningId = matches[0].id;
+          }
         }
+        if (rekeningId) document.getElementById('trxBkRekening').value = rekeningId;
       }
 
       document.getElementById('trxModal').classList.add('show');
@@ -4702,6 +4709,31 @@
       return 'FNV-' + (hash >>> 0).toString(16).padStart(8, '0') + '-' + bytes.length;
     }
 
+    function makeImportRowSignature(row) {
+      return [
+        row.tanggal || '',
+        row.jenis || '',
+        String(row.status || '').toUpperCase(),
+        String(row.lokasi || '').toUpperCase(),
+        Number(row.nilai) || 0,
+        Number(row.laba) || 0,
+        String(row.keterangan || '').trim().replace(/\\s+/g, ' ')
+      ].join('\\u001f');
+    }
+
+    function makeImportRowId(row, occurrence) {
+      const signature = typeof row === 'string' ? row : makeImportRowSignature(row);
+      let h1 = 2166136261, h2 = 5381;
+      for (let i = 0; i < signature.length; i++) {
+        const c = signature.charCodeAt(i);
+        h1 = Math.imul(h1 ^ c, 16777619);
+        h2 = Math.imul(h2 ^ c, 33);
+      }
+      const a = (h1 >>> 0).toString(16).padStart(8, '0');
+      const b = (h2 >>> 0).toString(16).padStart(8, '0');
+      return 'IMP-R-' + a + b + '-' + occurrence;
+    }
+
     async function handleFile(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -4749,6 +4781,8 @@
 
         // Use normalized rows (keys already uppercased)
         const dataRows = (typeof normalized !== 'undefined') ? normalized : json;
+        const bkMasterForImport = await getAllBkRekening();
+        const rowOccurrences = new Map();
 
         dataRows.forEach((row, idx) => {
           // Flexible key lookup
@@ -4782,6 +4816,7 @@
           if (!tanggal) { statusRow = 'error'; msg = 'Tanggal kosong/tidak valid'; }
           else if (!jenis || !JENIS_LIST.includes(jenis)) { statusRow = 'error'; msg = 'Jenis tidak dikenal: ' + (jenisRaw || jenis); }
           else if (status !== 'TUNAI' && status !== 'KREDIT') { statusRow = 'error'; msg = 'Status kosong/tidak dikenal: ' + (status || '—'); }
+          else if (!['PENJUALAN', 'PEMBELIAN BARANG'].includes(jenis) && status !== 'TUNAI') { statusRow = 'error'; msg = 'Jenis transaksi ini hanya boleh berstatus TUNAI'; }
           else if (!['TOKO', 'PASAR', 'LELANG', 'GUDANG'].includes(lokasi)) { statusRow = 'error'; msg = 'Lokasi kosong/tidak dikenal: ' + (lokasi || '—'); }
           else if (!nilaiText || !isValidImportNumeric(nilaiRaw) || !Number.isFinite(nilai)) { statusRow = 'error'; msg = 'Nilai kosong/tidak valid'; }
           else if (nilai < 0) { statusRow = 'error'; msg = 'Nilai negatif'; }
@@ -4799,9 +4834,27 @@
               alasan: msg || 'Data tidak valid'
             });
           } else {
+            let bk_rekening_id = null;
+            let bk_rekening_nba = null;
+            if (jenis === 'BON KAS' || jenis === 'PEMBAYARAN BK') {
+              const parsedBk = parseBkKeterangan(keterangan);
+              if (parsedBk) {
+                bk_rekening_nba = parsedBk.nba;
+                const matches = bkMasterForImport.filter(a => normNba(a.nba) === parsedBk.key);
+                if (matches.length === 1) bk_rekening_id = matches[0].id;
+                else if (statusRow === 'ok') {
+                  statusRow = 'warn';
+                  msg = matches.length > 1
+                    ? 'NBA rekening BK ganda di master; transaksi perlu diperiksa'
+                    : 'Rekening BK belum ada di master; transaksi perlu dipetakan';
+                }
+              } else if (statusRow === 'ok') {
+                statusRow = 'warn';
+                msg = 'NBA rekening BK tidak terbaca dari keterangan; transaksi perlu dipetakan';
+              }
+            }
             if (statusRow === 'warn') warnCount++;
-            importRows.push({
-              id: 'IMP-' + fileFingerprint.slice(0, 24) + '-' + idx,
+            const importedRow = {
               tanggal,
               jenis,
               status: (status === 'KREDIT' ? 'KREDIT' : 'TUNAI'),
@@ -4809,12 +4862,20 @@
               nilai,
               laba: jenis === 'PENJUALAN' ? laba : 0,
               keterangan,
+              bk_rekening_id,
+              bk_rekening_nba,
               created_at: new Date().toISOString(),
               import_source: fileFingerprint,
-              status_data: 'aktif',
-              _status: statusRow,
-              _msg: msg
-            });
+              status_data: 'aktif'
+            };
+            const signature = makeImportRowSignature(importedRow);
+            const occurrence = (rowOccurrences.get(signature) || 0) + 1;
+            rowOccurrences.set(signature, occurrence);
+            importedRow.id = makeImportRowId(signature, occurrence);
+            importedRow.source_key = signature;
+            importedRow._status = statusRow;
+            importedRow._msg = msg;
+            importRows.push(importedRow);
           }
         });
 
@@ -4895,6 +4956,16 @@
         const archived = await getAll('transaksi_arsip');
         archived.forEach(r => existingIds.add(r.id));
       }
+      const existingImports = existing.concat(
+        db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : []
+      ).filter(r => r.import_source || r.source_key);
+      const stableOccurrences = new Map();
+      existingImports.forEach(r => {
+        const signature = r.source_key || makeImportRowSignature(r);
+        const occurrence = (stableOccurrences.get(signature) || 0) + 1;
+        stableOccurrences.set(signature, occurrence);
+        existingIds.add(makeImportRowId(signature, occurrence));
+      });
       const pending = importRows.filter(r => !existingIds.has(r.id));
       const skipped = importRows.length - pending.length;
       if (!pending.length) {
@@ -4927,8 +4998,6 @@
             tx.onabort = () => reject(tx.error || new Error('Impor dibatalkan database'));
           } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } reject(e); }
         });
-        settings.id = 'app';
-        await put('settings', settings);
         document.getElementById('progressFill').style.width = '100%';
         document.getElementById('progressText').textContent = `Berhasil import ${pending.length} transaksi · ${skipped} duplikat dilewati`;
         markDataChanged();
@@ -5835,6 +5904,55 @@
       settings.saldoAwalBonKas = total;
       settings.id = 'app';
       await put('settings', settings);
+    }
+
+    async function seedBkFromDefault() {
+      const defaults = [
+        { nba:'1.385', nama:'HENDRIKUS SORO', saldo_awal:5650000 },
+        { nba:'001', nama:'KSP KOPDIT BOAWAE', saldo_awal:220000 },
+        { nba:'17.267', nama:'YERITA KOLI NANGA', saldo_awal:0 },
+        { nba:'19285', nama:'YULIANUS BILA NGOLE', saldo_awal:0 },
+        { nba:'11.829', nama:'SERAFINA IO BANI', saldo_awal:0 },
+        { nba:'15651', nama:'MARSIANUS NANU', saldo_awal:0 },
+        { nba:'4.397', nama:'MARIA IMAKULATA LOWA', saldo_awal:0 },
+        { nba:'16214', nama:'YOHANES E. TEMA', saldo_awal:0 },
+        { nba:'1386', nama:'MARY YO M.AB.SADA', saldo_awal:0 },
+        { nba:'969', nama:'ALFONSIUS N. NOE', saldo_awal:0 },
+        { nba:'20592', nama:'AURELIUS BATE', saldo_awal:0 },
+        { nba:'20.768', nama:'EDMUNDUS DONA OWA LABO', saldo_awal:1000000 },
+        { nba:'10175', nama:'FLORENTINA IRENE WELE', saldo_awal:0 },
+        { nba:'18932', nama:'LAURENSIIUS KODO', saldo_awal:0 },
+        { nba:'20.766', nama:'MARIA FIRMINA SADA POY', saldo_awal:0 },
+        { nba:'848', nama:'MARIA RATNA MENGE BOI', saldo_awal:3680000 },
+        { nba:'20740', nama:'MARIANA ARI', saldo_awal:0 },
+        { nba:'736', nama:'MARTHA BULE ELU', saldo_awal:0 },
+        { nba:'1033', nama:'PASKALIS SAEN PARERA', saldo_awal:0 },
+        { nba:'18949', nama:'TRESIA MAU', saldo_awal:0 },
+        { nba:'1029', nama:'YOHANES BRECHMANS GI', saldo_awal:0 },
+        { nba:'13.208', nama:'YOSEPH MARKUS INDRA LUDJU', saldo_awal:5500000 },
+        { nba:'494', nama:'YOSEPH PATRISIUS TENGA', saldo_awal:0 },
+        { nba:'20.735', nama:'YUSTINA RASINI RUTO GHOLO', saldo_awal:300000 }
+      ];
+      const existing = await getAllBkRekening();
+      if (existing.length && !confirm('Sudah ada rekening. Tambahkan rekening sumber yang belum ada? Saldo rekening yang sudah terdaftar tidak akan ditimpa.')) return;
+      const existKeys = new Set(existing.map(r => normNba(r.nba)));
+      let added = 0;
+      for (const d of defaults) {
+        if (existKeys.has(normNba(d.nba))) continue;
+        await put('bk_rekening', {
+          id: 'BK-' + normNba(d.nba),
+          nba: d.nba,
+          nama: d.nama,
+          saldo_awal: d.saldo_awal,
+          key: normNba(d.nba),
+          updated_at: new Date().toISOString()
+        });
+        added++;
+      }
+      await syncBkTotalToSettings();
+      markDataChanged();
+      await loadBkMasterTable();
+      toast(added ? 'Ditambahkan ' + added + ' rekening BK sumber' : 'Semua rekening sumber sudah terdaftar', 'success');
     }
 
     async function fillTrxBkDropdown() {
