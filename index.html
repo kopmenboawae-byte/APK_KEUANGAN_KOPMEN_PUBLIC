@@ -3708,6 +3708,7 @@
       return {
         period: { from, to, kasMasuk, kasKeluar, jualTunai, jualLelang, jualKredit, penjualan, laba, hpp, beli, beliTunai, beliKredit,
                   persediaanAwal: persediaanAwalPeriode, persediaanAkhir: saldoPersediaan, hppPersediaan, inventoryBasis, inventoryWarning, stocktakeDate: stocktakeClosing ? stocktakeClosing.tanggal : null,
+                  saldoKasAwalPeriode: saldoKas - (kasMasuk - kasKeluar), saldoKasAkhirPeriode: saldoKas,
                   labaBersihKumulatif, fiscalYearStart,
                   bayarBon, pelunasan, bonKas, bayarBk, biaya, terimaLain, keluarLain, titipan,
                   sibuharStor, sibuharTarik, labaKotor, labaBersih },
@@ -3895,6 +3896,11 @@
       rows.push({ label: 'Pengeluaran Lain-lain', value: p.keluarLain, indent: true });
       rows.push({ label: 'Total Kas Keluar', value: p.kasKeluar, bold: true, border: true });
       rows.push({ label: 'ARUS KAS NETO', value: neto, bold: true, border: true });
+      rows.push({ section: 'REKONSILIASI SALDO KAS' });
+      rows.push({ label: 'Saldo Kas Awal Sistem (Kas Real + BK)', value: p.saldoKasAwalPeriode, indent: true });
+      rows.push({ label: 'Arus Kas Neto Periode', value: neto, indent: true });
+      rows.push({ label: 'Saldo Kas Akhir Sistem (Kas Real + BK)', value: p.saldoKasAkhirPeriode, bold: true, border: true });
+      rows.push({ note: 'Rekonsiliasi saldo kas sistem: saldo awal + arus kas neto = saldo akhir. Saldo akhir gabungan terdiri dari Kas Real ' + formatRp(s.kasReal) + ' dan Saldo BK ' + formatRp(s.saldoBk) + '. Transaksi Bon Kas, Pembayaran BK, dan Titipan Kas tidak masuk arus kas resmi.' });
       rows.push({ note: 'Laporan resmi: termasuk Penjualan Lelang tunai. Tanpa Bon Kas, Pembayaran BK, dan Titipan Kas.' });
       return { rows, meta: { neto } };
     }
