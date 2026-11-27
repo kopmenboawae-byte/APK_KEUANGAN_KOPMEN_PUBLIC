@@ -1,0 +1,52 @@
+name: Validate HTML application
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - ".github/workflows/validate-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inline-javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Extract inline scripts
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r'<script\\b(?![^>]*\\bsrc=)[^>]*>(.*?)</script\\s*>', html, re.I | re.S)
+          if not scripts:
+              raise SystemExit("Tidak ditemukan inline JavaScript untuk diperiksa")
+          out = Path("/tmp/kopmen-inline")
+          out.mkdir(exist_ok=True)
+          for i, script in enumerate(scripts, 1):
+              (out / f"script-{i}.js").write_text(script, encoding="utf-8")
+          print(f"Inline script ditemukan: {len(scripts)}")
+          PY
+
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in /tmp/kopmen-inline/*.js; do
+            echo "Memeriksa $file"
+            node --check "$file"
+          done
+          echo "Semua inline JavaScript lolos pemeriksaan sintaks."
