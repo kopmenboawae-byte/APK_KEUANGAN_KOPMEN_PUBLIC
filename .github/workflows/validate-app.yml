@@ -65,3 +65,6 @@ jobs:
         run: |
           npm install --no-save --package-lock=false fake-indexeddb@6.2.4
           node tests/import-staging.test.cjs
+
+      - name: Test legacy ledger migration rules
+        run: node tests/legacy-migration.test.cjs
