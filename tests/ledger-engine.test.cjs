@@ -50,6 +50,8 @@ assert.ok(html.includes('bk_accountability_record'), 'BK journal and subledger r
 assert.ok(html.includes('amount>balance.ledger_balance'), 'BK returns/accountability must not exceed posted advance balance');
 assert.ok(html.includes("bkRecord.kind==='accountability'&&!String(bkRecord.evidence_reference||'').trim()"), 'Expense accountability requires evidence');
 assert.ok(html.includes('Saldo uang muka BK saat posting tidak cukup'), 'Posting must recheck available BK balance to prevent duplicate accountability');
+assert.ok(html.includes("bkRecord.status!=='draft'"), 'Only a matching draft BK record may be posted');
+assert.ok(html.includes('changed_fields:checked.lines.map'), 'Opening version must retain affected account references');
 assert.ok(html.includes("current.source_type==='reversal'"), 'Journal reversal must update linked subledger status');
 assert.ok(html.includes("status:'reversed'"), 'Reversed BK/opening records must be marked reversed');
 assert.ok(html.includes('balance.ledger_balance<reduction'), 'Reversing a BK advance must not create a negative subledger balance');
