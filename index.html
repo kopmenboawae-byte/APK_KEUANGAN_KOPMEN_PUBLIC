@@ -2655,6 +2655,10 @@
       const missing=ACCOUNTING_DEFAULT_ACCOUNTS.filter(a=>!known.has(a.code)); if(!missing.length)return;
       await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction('chart_accounts','readwrite');const store=tx.objectStore('chart_accounts');missing.forEach(a=>store.add(a));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Inisialisasi bagan akun gagal'));tx.onabort=()=>reject(tx.error||new Error('Inisialisasi bagan akun dibatalkan'));}catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}});
     }
+    function accountingIsValidDate(value) {
+      const date=String(value||'');if(date.length!==10||date[4]!=='-'||date[7]!=='-')return false;
+      const parsed=new Date(date+'T00:00:00Z');return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===date;
+    }
     function accountingValidateJournalLines(lines,accounts) {
       if(!Array.isArray(lines)||lines.length<2)throw new Error('Jurnal harus memiliki sedikitnya dua baris.');
       const map=new Map(accounts.map(a=>[String(a.code),a]));let debit=0,credit=0;
