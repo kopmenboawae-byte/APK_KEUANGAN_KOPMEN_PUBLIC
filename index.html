@@ -1660,6 +1660,58 @@
         <div id="generalLedgerSummary" style="font-size:.78rem;color:var(--muted);margin:8px 0;"></div>
         <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jurnal / Uraian</th><th class="text-right">Debit</th><th class="text-right">Kredit</th><th class="text-right">Saldo</th></tr></thead><tbody id="generalLedgerBody"></tbody></table></div>
       </section>
+<div class="card">
+        <div class="card-title">Administrasi Bon Kas · Master Rekening</div>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="openBkRekeningModal()">+ Tambah Rekening</button>
+          <button class="btn btn-outline btn-sm" onclick="seedBkFromDefault()">Isi 24 Rekening Sumber</button>
+        </div>
+        <div class="table-wrap" style="max-height:260px;">
+          <table>
+            <thead><tr><th>NBA</th><th>Nama</th><th class="text-right">Saldo Awal</th><th></th></tr></thead>
+            <tbody id="bkMasterTable"></tbody>
+          </table>
+        </div>
+      </div>
+<div class="card" id="settings-stok">
+        <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
+        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
+          Catat nilai persediaan pada tanggal tertentu. Untuk laporan HPP, tanggal snapshot harus sama dengan tanggal akhir laporan dan saldo persediaan awal periode harus tersedia. Jika salah satu tidak terpenuhi, laporan akan memberi peringatan bahwa HPP belum dapat dihitung dari snapshot.
+          Angka referensi sumber 2026: saldo awal 01/01/2026 Rp27.759.289 dan saldo akhir 20/11/2026 Rp25.057.960. Angka ini bahan rekonsiliasi, bukan otomatis bukti stok fisik.
+        </p>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;font-size:.8rem;color:#1e3a8a;"><strong>Urutan pengisian</strong><ol style="padding-left:18px;margin:6px 0 0;"><li>Isi saldo persediaan awal pada bagian Aset Lancar sesuai buku sumber.</li><li>Masukkan tanggal dan nilai persediaan akhir pada bagian ini.</li><li>Centang verifikasi hanya setelah stok fisik dan dasar penilaiannya benar-benar diperiksa.</li><li>Untuk laporan, pilih tanggal akhir yang sama dengan tanggal snapshot.</li></ol><p style="margin:7px 0 0;">Status Belum Diverifikasi berarti angka masih referensi sementara. Jangan menyebutnya hasil opname fisik yang sudah sah.</p></div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Tanggal Stok Opname</label>
+            <input type="date" id="soTanggal" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label>Nilai Persediaan Akhir (Rp)</label>
+            <input type="text" id="soNilai" class="form-control input-rp" inputmode="numeric" value="Rp 0" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Catatan / Dasar Penilaian</label>
+          <input type="text" id="soCatatan" class="form-control" placeholder="Contoh: hasil opname fisik dan penilaian per tanggal" />
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;margin-bottom:10px;">
+          <input type="checkbox" id="soVerified" />
+          Sudah diverifikasi melalui opname fisik dan penilaian stok
+        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()" >Simpan Catatan Stok</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()" >Isi Snapshot Sumber 20/11/2026</button>
+        </div>
+        <div id="soSummary" style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;"></div>
+        <div class="table-wrap" style="max-height:220px;">
+          <table>
+            <thead><tr><th>Tanggal</th><th class="text-right">Nilai Stok</th><th>Status</th><th>Catatan</th><th></th></tr></thead>
+            <tbody id="soTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      
     </div>
 
     <!-- KAS -->
@@ -1839,20 +1891,7 @@
         <div id="saldoAwalSummary" style="font-size:0.85rem;"></div>
         <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showPage('settings')">Edit Saldo Awal</button>
       </div>
-      <div class="card">
-        <div class="card-title">03 · Master Rekening Bon Kas (BK)</div>
-        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-          <button class="btn btn-primary btn-sm" onclick="openBkRekeningModal()">+ Tambah Rekening</button>
-          <button class="btn btn-outline btn-sm" onclick="seedBkFromDefault()">Isi 24 Rekening Sumber</button>
-        </div>
-        <div class="table-wrap" style="max-height:260px;">
-          <table>
-            <thead><tr><th>NBA</th><th>Nama</th><th class="text-right">Saldo Awal</th><th></th></tr></thead>
-            <tbody id="bkMasterTable"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="card"><p style="font-size:.82rem;color:var(--muted);">Administrasi rekening BK dipindahkan ke menu Transaksi.</p><button class="btn btn-outline btn-sm" onclick="showPage('transaksi')">Buka Transaksi</button></div>
       <div class="card">
         <div class="card-title">04 · Backup, Restore & Database</div>
         <div id="backupStatusCard" style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:0.8rem;">
@@ -2013,7 +2052,7 @@
 
     <div id="page-settings" class="page">
       <div class="section-title">Pengaturan & Saldo Awal</div>
-      <div class="card" style="border-left:4px solid var(--primary);"><div class="card-title">Pilih Bagian Pengaturan</div><p style="font-size:.82rem;color:var(--muted);margin-bottom:10px;">Gunakan pintasan agar tidak perlu mencari bagian satu per satu. Perubahan saldo berlaku setelah tombol Simpan Semua Saldo Awal ditekan.</p><div class="settings-shortcuts"><button class="settings-jump" type="button" onclick="document.getElementById('settings-identitas').scrollIntoView({behavior:'smooth',block:'start'})">Identitas & Periode</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-lancar').scrollIntoView({behavior:'smooth',block:'start'})">Kas & Aset Lancar</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-stok').scrollIntoView({behavior:'smooth',block:'start'})">Stok Opname</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-tetap').scrollIntoView({behavior:'smooth',block:'start'})">Aset Tetap</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-kewajiban').scrollIntoView({behavior:'smooth',block:'start'})">Kewajiban & BK</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-ekuitas').scrollIntoView({behavior:'smooth',block:'start'})">Modal & Ekuitas</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-keamanan').scrollIntoView({behavior:'smooth',block:'start'})">Keamanan</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-simpan').scrollIntoView({behavior:'smooth',block:'start'})">Simpan Perubahan</button></div></div>
+      <div class="card" style="border-left:4px solid var(--primary);"><div class="card-title">Pilih Bagian Pengaturan</div><p style="font-size:.82rem;color:var(--muted);margin-bottom:10px;">Gunakan pintasan agar tidak perlu mencari bagian satu per satu. Perubahan saldo berlaku setelah tombol Simpan Semua Saldo Awal ditekan.</p><div class="settings-shortcuts"><button class="settings-jump" type="button" onclick="document.getElementById('settings-identitas').scrollIntoView({behavior:'smooth',block:'start'})">Identitas & Periode</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-lancar').scrollIntoView({behavior:'smooth',block:'start'})">Kas & Aset Lancar</button><button class="settings-jump" type="button" onclick="showPage('transaksi'); setTimeout(()=>document.getElementById('settings-stok').scrollIntoView({behavior:'smooth',block:'start'}),120)">Stok Opname</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-tetap').scrollIntoView({behavior:'smooth',block:'start'})">Aset Tetap</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-kewajiban').scrollIntoView({behavior:'smooth',block:'start'})">Kewajiban & BK</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-ekuitas').scrollIntoView({behavior:'smooth',block:'start'})">Modal & Ekuitas</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-keamanan').scrollIntoView({behavior:'smooth',block:'start'})">Keamanan</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-simpan').scrollIntoView({behavior:'smooth',block:'start'})">Simpan Perubahan</button></div></div>
       <div class="card" style="border-left:4px solid var(--warning);">
         <div class="card-title">Penting — Verifikasi Saldo Awal</div>
         <p style="font-size:0.82rem;color:var(--muted);margin:0;">
@@ -2091,43 +2130,7 @@
           <input type="text" id="setSaldoPenerimaanYMH" class="form-control input-rp" inputmode="numeric" />
         </div>
       </div>
-      <div class="card settings-anchor" id="settings-stok">
-        <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
-        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
-          Catat nilai persediaan pada tanggal tertentu. Untuk laporan HPP, tanggal snapshot harus sama dengan tanggal akhir laporan dan saldo persediaan awal periode harus tersedia. Jika salah satu tidak terpenuhi, laporan akan memberi peringatan bahwa HPP belum dapat dihitung dari snapshot.
-          Angka referensi sumber 2026: saldo awal 01/01/2026 Rp27.759.289 dan saldo akhir 20/11/2026 Rp25.057.960. Angka ini bahan rekonsiliasi, bukan otomatis bukti stok fisik.
-        </p>
-        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;font-size:.8rem;color:#1e3a8a;"><strong>Urutan pengisian</strong><ol style="padding-left:18px;margin:6px 0 0;"><li>Isi saldo persediaan awal pada bagian Aset Lancar sesuai buku sumber.</li><li>Masukkan tanggal dan nilai persediaan akhir pada bagian ini.</li><li>Centang verifikasi hanya setelah stok fisik dan dasar penilaiannya benar-benar diperiksa.</li><li>Untuk laporan, pilih tanggal akhir yang sama dengan tanggal snapshot.</li></ol><p style="margin:7px 0 0;">Status Belum Diverifikasi berarti angka masih referensi sementara. Jangan menyebutnya hasil opname fisik yang sudah sah.</p></div>
-        <div class="grid-2">
-          <div class="form-group">
-            <label>Tanggal Stok Opname</label>
-            <input type="date" id="soTanggal" class="form-control" />
-          </div>
-          <div class="form-group">
-            <label>Nilai Persediaan Akhir (Rp)</label>
-            <input type="text" id="soNilai" class="form-control input-rp" inputmode="numeric" value="Rp 0" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Catatan / Dasar Penilaian</label>
-          <input type="text" id="soCatatan" class="form-control" placeholder="Contoh: hasil opname fisik dan penilaian per tanggal" />
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;margin-bottom:10px;">
-          <input type="checkbox" id="soVerified" />
-          Sudah diverifikasi melalui opname fisik dan penilaian stok
-        </label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-          <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()" >Simpan Catatan Stok</button>
-          <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()" >Isi Snapshot Sumber 20/11/2026</button>
-        </div>
-        <div id="soSummary" style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;"></div>
-        <div class="table-wrap" style="max-height:220px;">
-          <table>
-            <thead><tr><th>Tanggal</th><th class="text-right">Nilai Stok</th><th>Status</th><th>Catatan</th><th></th></tr></thead>
-            <tbody id="soTableBody"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="card"><p style="font-size:.82rem;color:var(--muted);">Stok Opname sekarang dikelola dari menu Transaksi.</p><button class="btn btn-outline btn-sm" onclick="showPage('transaksi')">Buka Transaksi</button></div>
       <div class="card settings-anchor" id="settings-aset-tetap">
         <div class="card-title">ASET TETAP — Saldo Awal</div>
         <div class="form-group">
@@ -3050,14 +3053,14 @@
       next.classList.add('active');
 
       if (name === 'dashboard') loadDashboard();
-      if (name === 'transaksi') { loadTransaksi(); loadAccountingWorkbench(); }
+      if (name === 'transaksi') { loadTransaksi(); loadAccountingWorkbench(); loadBkMasterTable(); loadStokOpname(); }
       if (name === 'kas') loadKasHarian();
       if (name === 'sibuhar') loadSibuhar();
       if (name === 'bonkas') loadBonKas();
       if (name === 'tutupjurnal') loadTutupJurnal();
       if (name === 'laporan') loadLaporan();
-      if (name === 'import') { updateDbInfo(); loadBkMasterTable(); updateArchiveInfo(); }
-      if (name === 'settings') { loadSettingsForm(); loadStokOpname(); updatePinStatusUI(); renderLudjuModuleTable(); initAllRpInputs(document.getElementById('page-settings')); }
+      if (name === 'import') { updateDbInfo(); updateArchiveInfo(); }
+      if (name === 'settings') { loadSettingsForm(); updatePinStatusUI(); renderLudjuModuleTable(); initAllRpInputs(document.getElementById('page-settings')); }
     }
 
     // ===================== PIUTANG DAGANG =====================
@@ -6602,7 +6605,7 @@
       list.sort((a,b) => (a.nama||'').localeCompare(b.nama||''));
       if (!list.length) {
         sel.innerHTML = '<option value="">— Belum ada rekening BK —</option>';
-        toast('Belum ada rekening BK. Buka menu Data & Backup → Isi 24 Rekening Sumber / Tambah Rekening', 'error');
+        toast('Belum ada rekening BK. Buka menu Transaksi → Administrasi Bon Kas.', 'error');
       } else {
         sel.innerHTML = '<option value="">— Pilih Rekening BK —</option>' +
           list.map(r => `<option value="${r.id}" data-nba="${String(r.nba).replace(/"/g,'')}" data-nama="${String(r.nama).replace(/"/g,'')}">${r.nba} — ${r.nama}</option>`).join('');
