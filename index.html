@@ -2051,9 +2051,10 @@
       <div class="card settings-anchor" id="settings-stok">
         <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
         <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
-          Catat nilai stok hasil opname pada tanggal tertentu. Laporan HPP hanya memakai snapshot jika tanggal opname sama dengan tanggal akhir laporan dan saldo pembuka periode tersedia. Jika tidak, laporan akan menandai HPP sebagai estimasi.
-          Untuk merekonstruksi laporan sumber 2026: saldo awal 01/01/2026 Rp27.759.289; saldo akhir sumber 20/11/2026 Rp25.057.960. Masukkan saldo awal melalui Pengaturan; tombol saldo sumber hanya menambahkan snapshot akhir yang belum diverifikasi fisik.
+          Catat nilai persediaan pada tanggal tertentu. Untuk laporan HPP, tanggal snapshot harus sama dengan tanggal akhir laporan dan saldo persediaan awal periode harus tersedia. Jika salah satu tidak terpenuhi, laporan akan memberi peringatan bahwa HPP belum dapat dihitung dari snapshot.
+          Angka referensi sumber 2026: saldo awal 01/01/2026 Rp27.759.289 dan saldo akhir 20/11/2026 Rp25.057.960. Angka ini bahan rekonsiliasi, bukan otomatis bukti stok fisik.
         </p>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:12px;font-size:.8rem;color:#1e3a8a;"><strong>Urutan pengisian</strong><ol style="padding-left:18px;margin:6px 0 0;"><li>Isi saldo persediaan awal pada bagian Aset Lancar sesuai buku sumber.</li><li>Masukkan tanggal dan nilai persediaan akhir pada bagian ini.</li><li>Centang verifikasi hanya setelah stok fisik dan dasar penilaiannya benar-benar diperiksa.</li><li>Untuk laporan, pilih tanggal akhir yang sama dengan tanggal snapshot.</li></ol><p style="margin:7px 0 0;">Status Belum Diverifikasi berarti angka masih referensi sementara. Jangan menyebutnya hasil opname fisik yang sudah sah.</p></div>
         <div class="grid-2">
           <div class="form-group">
             <label>Tanggal Stok Opname</label>
@@ -2073,8 +2074,8 @@
           Sudah diverifikasi melalui opname fisik dan penilaian stok
         </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-          <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()">Simpan Stok Opname</button>
-          <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()">Tambah Saldo Sumber 20/11/2026</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="saveStokOpname()" >Simpan Catatan Stok</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="seedStokOpnameSumber()" >Isi Snapshot Sumber 20/11/2026</button>
         </div>
         <div id="soSummary" style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;"></div>
         <div class="table-wrap" style="max-height:220px;">
@@ -2308,7 +2309,7 @@
     // ===================== CONFIG & CONSTANTS =====================
     const DB_NAME = 'LUDJU_REPORT_DB';
     const DB_VERSION = 11; // v11: stok opname bertanggal
-    const APP_VERSION = '1.9.0-Pro';
+    const APP_VERSION = '1.9.1-Pro';
     const FS_HANDLE_ID = 'fs_backup_dir';
 
     /**
