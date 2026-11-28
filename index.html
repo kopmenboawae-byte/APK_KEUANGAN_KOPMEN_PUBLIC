@@ -6557,7 +6557,7 @@
       records.sort((a,b)=>String(b.tanggal||'').localeCompare(String(a.tanggal||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
       body.innerHTML=records.slice(0,30).map(r=>{
         const h=map.get(String(r.bk_rekening_id)),kind=r.kind==='advance'?'Bon Kas':r.kind==='cash_return'?'Pengembalian':'Pertanggungjawaban';
-        const actions=r.status==='draft'?'<button class="btn btn-primary btn-sm" onclick="postManualJournal(\''+accountingEscapeHtml(r.journal_id)+'\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\''+accountingEscapeHtml(r.journal_id)+'\')">Batal</button>':'—';
+        const actions=journalActionHtml({id:r.journal_id,status:r.status});
         return '<tr><td>'+accountingEscapeHtml(r.tanggal)+'</td><td>'+accountingEscapeHtml(h?h.nba+' — '+h.nama:r.holder_name||r.bk_rekening_id)+'</td><td>'+kind+'</td><td>'+accountingEscapeHtml(r.description)+'</td><td class="text-right">'+formatRp(r.amount)+'</td><td>'+accountingEscapeHtml(r.status)+'</td><td>'+actions+'</td></tr>';
       }).join('')||'<tr><td colspan="7" class="empty">Belum ada aktivitas BK.</td></tr>';
     }
@@ -7183,6 +7183,17 @@
         toast('Draft jurnal ditolak: ' + e.message, 'error');
       }
     }
+    async function reverseManualJournal(id) {
+      const reason=prompt('Alasan membalik jurnal posted:');
+      if(!reason||!reason.trim())return;
+      if(!confirm('Buat jurnal pembalik untuk jurnal '+id+'? Jurnal asal tetap tersimpan.'))return;
+      try {
+        const result=await reversePostedJournal(id,reason.trim());
+        toast('Jurnal pembalik '+result.id+' berhasil diposting.','success');
+        await loadAccountingWorkbench();await loadBkMasterTable();await loadOpeningBalanceHistory();
+      } catch(e) { toast('Pembalikan jurnal ditolak: '+e.message,'error'); }
+    }
+
     async function postManualJournal(id) {
       if (!confirm('Posting jurnal ini? Setelah posted, jurnal tidak dapat diedit dan hanya dapat dikoreksi dengan pembalikan.')) return;
       try {
@@ -7225,6 +7236,13 @@
       } catch(e){toast('Pembatalan draft gagal: '+e.message,'error');}
     }
 
+    function journalActionHtml(entry) {
+      const id=accountingEscapeHtml(entry.id);
+      if(entry.status==='draft')return '<button class="btn btn-primary btn-sm" onclick="postManualJournal(\\''+id+'\\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\\''+id+'\\')">Batal</button>';
+      if(entry.status==='posted')return '<button class="btn btn-outline btn-sm" onclick="reverseManualJournal(\\''+id+'\\')">Balik</button>';
+      return '—';
+    }
+
     async function loadAccountingWorkbench() {
       const host = document.getElementById('accountingWorkbench');
       if (!host) return;
@@ -7245,7 +7263,7 @@
         const entries = await getAll('journal_entries');
         entries.sort((a,b)=>String(b.tanggal||'').localeCompare(String(a.tanggal||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
         const body = document.getElementById('journalEntriesBody');
-        if (body) body.innerHTML = entries.slice(0,30).map(entry => '<tr><td>' + accountingEscapeHtml(entry.tanggal) + '</td><td>' + accountingEscapeHtml(entry.description) + '<br><small>' + accountingEscapeHtml(entry.id) + '</small></td><td>' + accountingEscapeHtml(entry.status) + '</td><td class="text-right">' + formatRp(entry.debit_total) + '</td><td class="text-right">' + formatRp(entry.credit_total) + '</td><td>' + (entry.status === 'draft' ? '<button class="btn btn-primary btn-sm" onclick="postManualJournal(\'' + accountingEscapeHtml(entry.id) + '\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\'' + accountingEscapeHtml(entry.id) + '\')">Batal</button>' : '—') + '</td></tr>').join('') || '<tr><td colspan="6" class="empty">Belum ada jurnal.</td></tr>';
+        if (body) body.innerHTML = entries.slice(0,30).map(entry => '<tr><td>' + accountingEscapeHtml(entry.tanggal) + '</td><td>' + accountingEscapeHtml(entry.description) + '<br><small>' + accountingEscapeHtml(entry.id) + '</small></td><td>' + accountingEscapeHtml(entry.status) + '</td><td class="text-right">' + formatRp(entry.debit_total) + '</td><td class="text-right">' + formatRp(entry.credit_total) + '</td><td>' + journalActionHtml(entry) + '</td></tr>').join('') || '<tr><td colspan="6" class="empty">Belum ada jurnal.</td></tr>';
         await loadTrialBalanceView();
         if (glSelect && glSelect.value) await loadGeneralLedgerView();
       } catch (e) {
