@@ -4143,14 +4143,14 @@
       };
     }
 
-    async function renderLedgerReportReadiness(from,to) {
+    async function renderLedgerReportReadiness(from,to,ledgerResult) {
       const host=document.getElementById('ledgerReportReadiness');if(!host)return;
       try{
-        const result=await calcLedgerFinancials(from,to),r=result.readiness;
+        const result=ledgerResult||await calcLedgerFinancials(from,to),r=result.readiness;
         const status=r.ready?'Siap setelah sign-off':'Belum siap sebagai basis laporan resmi';
         host.innerHTML='<div class="card" style="border-left:4px solid '+(r.ready?'var(--success)':'var(--warning)')+';">'+
           '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><strong>Pratinjau Ledger · Posted Journals Only</strong><strong style="font-size:.78rem;color:'+(r.ready?'var(--success)':'var(--warning)')+';">'+status+'</strong></div>'+
-          '<p style="font-size:.74rem;color:var(--muted);margin:5px 0;">Laporan utama masih menggunakan basis transaksi legacy. Pratinjau ini hanya menghitung jurnal berstatus posted; draft tidak memengaruhi saldo.</p>'+
+          '<p style="font-size:.74rem;color:var(--muted);margin:5px 0;">'+(r.ready?'Laporan utama menggunakan basis ledger posted-only.':'Laporan utama masih menggunakan basis transaksi legacy.')+' Preview ledger hanya menghitung jurnal berstatus posted; draft tidak memengaruhi saldo.</p>'+
           '<div style="font-size:.78rem;">Jurnal posted: <strong>'+result.posted_journal_count+'</strong> · Draft: <strong>'+result.draft_journal_count+'</strong> · Transaksi historis posted: <strong>'+r.legacy_posted_count+'/'+r.legacy_source_count+'</strong></div>'+
           '<div style="font-size:.78rem;margin-top:4px;">Trial balance: selisih <strong>'+formatRp(result.trial_balance.difference)+'</strong> · Neraca: selisih <strong>'+formatRp(result.balance_sheet.difference)+'</strong></div>'+
           '<div style="font-size:.78rem;margin-top:4px;">Laba bersih ledger periode: <strong>'+formatRp(result.income_statement.net_profit)+'</strong> · Arus kas bersih: <strong>'+formatRp(result.cash_flow.net)+'</strong></div>'+
@@ -4537,6 +4537,49 @@
       return html;
     }
 
+function buildLedgerLaporanRows(ledger,type) {
+      const p=ledger.income_statement,b=ledger.balance_sheet,c=ledger.cash_flow;
+      let rows=[];
+      if(type==='neraca'){
+        rows=[
+          {section:'ASET'},{label:'Total Aset',value:b.assets,bold:true,border:true},
+          {section:'LIABILITAS'},{label:'Total Liabilitas',value:b.liabilities,bold:true,border:true},
+          {section:'EKUITAS'},{label:'Ekuitas',value:b.equity},{label:'SHU Berjalan',value:b.current_result},
+          {label:'Total Liabilitas dan Ekuitas',value:b.total_liabilities_equity,bold:true,border:true},
+          {label:'Selisih Neraca',value:b.difference,bold:true}
+        ];
+      }else if(type==='labarugi'){
+        rows=[
+          {section:'PENDAPATAN'},{label:'Pendapatan',value:p.revenue},{label:'Retur / Pengurang Penjualan',value:p.contra_revenue},
+          {label:'Pendapatan Bersih',value:p.revenue-p.contra_revenue,bold:true,border:true},
+          {section:'BEBAN POKOK'},{label:'Harga Pokok Penjualan',value:p.cogs},
+          {label:'Laba Kotor',value:p.gross_profit,bold:true,border:true},
+          {section:'BEBAN OPERASIONAL'},{label:'Beban Operasional',value:p.operating_expenses},
+          {label:'Laba Bersih',value:p.net_profit,bold:true,border:true}
+        ];
+      }else if(type==='arus'){
+        rows=[
+          {section:'ARUS KAS DAN SETARA KAS'},{label:'Kas Masuk',value:c.inflow},
+          {label:'Kas Keluar',value:c.outflow},{label:'Kenaikan / (Penurunan) Kas',value:c.net,bold:true,border:true},
+          {note:'Dihitung dari pergerakan akun 1101 Kas Tunai, 1102 Bank, dan 1103 Piutang Settlement QRIS. Hanya jurnal posted.'}
+        ];
+      }else{
+        rows=[
+          {section:'DASAR PENYUSUNAN'},{note:'Laporan ini dihitung dari jurnal ledger berstatus posted. Draft tidak dimasukkan.'},
+          {label:'Jumlah jurnal posted',value:ledger.posted_journal_count},
+          {label:'Jumlah jurnal draft (tidak dihitung)',value:ledger.draft_journal_count},
+          {label:'Transaksi legacy yang sudah posted',value:ledger.readiness.legacy_posted_count},
+          {label:'Total transaksi legacy sampai tanggal laporan',value:ledger.readiness.legacy_source_count},
+          {note:'Saldo pembuka posted: '+(ledger.readiness.opening_balance_posted?'Ya':'Belum')},
+          {note:'Rekonsiliasi persediaan/HPP: '+(ledger.readiness.inventory_reconciled?'Disahkan':'Belum disahkan')},
+          {note:'Rekonsiliasi subledger: '+(ledger.readiness.subledger_reconciled?'Disahkan':'Belum disahkan')},
+          {note:'Sign-off laporan: '+(ledger.readiness.report_signoff?'Disetujui':'Belum disetujui')},
+          {note:ledger.readiness.reasons.length?'Prasyarat belum terpenuhi:\n- '+ledger.readiness.reasons.join('\n- '):'Semua prasyarat ledger terpenuhi.'}
+        ];
+      }
+      return{rows,meta:{basis:'ledger_posted_only',posted_journal_count:ledger.posted_journal_count}};
+    }
+
     async function loadLaporan() {
       const from = document.getElementById('lapFrom').value || (settings.periode || '2026') + '-01-01';
       const to = document.getElementById('lapTo').value || todayStr();
@@ -4547,9 +4590,12 @@
         toast('Periksa kembali periode laporan.', 'error');
         return;
       }
-      await renderLedgerReportReadiness(from,to);
-      const f = await calcFinancials(from, to);
-      const built = buildLaporanRows(f, currentLap);
+      let ledgerResult=null;
+      try{ledgerResult=await calcLedgerFinancials(from,to);await renderLedgerReportReadiness(from,to,ledgerResult);}catch(error){const host=document.getElementById('ledgerReportReadiness');if(host)host.textContent='Pratinjau ledger gagal dimuat: '+error.message;}
+      const ledgerActive=!!(ledgerResult&&ledgerResult.readiness.ready);
+      const f=ledgerActive?null:await calcFinancials(from,to);
+      const built=ledgerActive?buildLedgerLaporanRows(ledgerResult,currentLap):buildLaporanRows(f,currentLap);
+      const reportBasis=ledgerActive?'ledger_posted_only':'legacy_transactions';
       const title = reportTitle(currentLap);
       const usaha = settings.namaUsaha || 'Usaha';
       const periodeText = currentLap === 'neraca'
@@ -4567,7 +4613,8 @@
         periodeText,
         rows: built.rows,
         meta: built.meta,
-        f
+        basis: reportBasis,
+        f: ledgerActive?ledgerResult:f
       };
 
       content.innerHTML = `
@@ -4576,6 +4623,7 @@
             <div class="lap-brand">${usaha}</div>
             <div class="lap-title">${title}</div>
             <div class="lap-period">${periodeText}</div>
+          <div class="lap-period">Basis: ${ledgerActive?'Ledger · Jurnal Posted':'Transaksi Legacy'}</div>
           </div>
           ${renderLaporanTable(built.rows)}
           <div class="lap-footer">
@@ -4595,10 +4643,12 @@
         return;
       }
       const L = _lastLaporan;
+      const basisText=L.basis==='ledger_posted_only'?'Basis: Ledger · Jurnal Posted':'Basis: Transaksi Legacy';
       const data = [
         [L.usaha],
         [L.title],
         [L.periodeText],
+        [basisText],
         [],
         ['Uraian', 'Nilai (Rp)']
       ];
@@ -4633,6 +4683,7 @@
       }
 
       const L = _lastLaporan;
+      const basisText=L.basis==='ledger_posted_only'?'Basis: Ledger · Jurnal Posted':'Basis: Transaksi Legacy';
       let bodyRows = '';
       L.rows.forEach(r => {
         if (r.section) {
@@ -4678,6 +4729,7 @@
             <div style="font-size:11pt;font-weight:600;color:#0f766e;letter-spacing:0.04em;text-transform:uppercase;">${L.usaha}</div>
             <div style="font-size:18pt;font-weight:800;margin:6px 0 4px;color:#0f172a;">${L.title}</div>
             <div style="font-size:10pt;color:#64748b;">${L.periodeText}</div>
+            <div style="font-size:9pt;color:#64748b;">${basisText}</div>
           </div>
           <table style="width:100%;border-collapse:collapse;">${bodyRows}</table>
           <div style="margin-top:28px;display:flex;justify-content:space-between;gap:24px;font-size:9pt;color:#64748b;">
