@@ -1690,7 +1690,7 @@
             <div class="form-group" id="bkAccCashAccountGroup"><label>Akun kas/bank *</label><select id="bkAccCashAccount" class="form-control"><option value="1101">1101 — Kas Tunai</option><option value="1102">1102 — Bank</option></select></div>
             <div class="form-group" id="bkAccExpenseGroup" style="display:none;"><label>Akun beban *</label><select id="bkAccExpenseAccount" class="form-control"><option value="">Pilih akun beban</option></select></div>
             <div class="form-group"><label>Uraian *</label><input type="text" id="bkAccDescription" class="form-control" maxlength="180" required placeholder="Tujuan bon / pengembalian / bukti beban" /></div>
-            <div class="form-group"><label>Referensi bukti</label><input type="text" id="bkAccEvidence" class="form-control" maxlength="120" placeholder="Nomor kuitansi / dokumen" /></div>
+            <div class="form-group"><label>Referensi bukti (wajib untuk pertanggungjawaban)</label><input type="text" id="bkAccEvidence" class="form-control" maxlength="120" placeholder="Nomor kuitansi / dokumen" /></div>
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Simpan Draft Jurnal BK</button>
         </form>
@@ -6576,6 +6576,7 @@
       const cash=document.getElementById('bkAccCashAccountGroup'),expense=document.getElementById('bkAccExpenseGroup');
       if(cash)cash.style.display=kind==='accountability'?'none':'block';
       if(expense)expense.style.display=kind==='accountability'?'block':'none';
+      const evidence=document.getElementById('bkAccEvidence');if(evidence)evidence.required=kind==='accountability';
     }
 
     async function saveBkAccountabilityDraft(event) {
