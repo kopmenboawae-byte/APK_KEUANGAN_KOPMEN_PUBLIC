@@ -5504,6 +5504,22 @@
               nilai: nilaiText || '—',
               alasan: msg || 'Data tidak valid'
             });
+            const rejectedRow = {
+              tanggal, jenis: jenis || jenisRaw, status, lokasi,
+              nilai: Number.isFinite(nilai) ? nilai : 0,
+              laba: Number.isFinite(laba) ? laba : 0,
+              keterangan, source_data: row, source_row: idx + 2,
+              source_file_name: file.name || 'Workbook historis',
+              import_source: fileFingerprint, status_data: 'staging'
+            };
+            const rejectedSignature = makeImportRowSignature(rejectedRow);
+            const rejectedOccurrence = (rowOccurrences.get(rejectedSignature) || 0) + 1;
+            rowOccurrences.set(rejectedSignature, rejectedOccurrence);
+            rejectedRow.id = makeImportRowId(rejectedSignature, rejectedOccurrence);
+            rejectedRow.source_key = rejectedSignature;
+            rejectedRow._status = 'error';
+            rejectedRow._msg = msg || 'Data tidak valid';
+            importRows.push(rejectedRow);
           } else {
             let bk_rekening_id = null;
             let bk_rekening_nba = null;
@@ -5565,7 +5581,7 @@
           <div class="card-title">Preview Import</div>
           <p style="font-size:0.85rem;margin-bottom:8px;">
             Sheet: <strong>${escapePreview(sheetName)}</strong><br>
-            Siap import: <strong>${importRows.length}</strong> baris ·
+            Siap staging: <strong>${importRows.filter(r => r._status !== 'error').length}</strong> baris ·
             Error: <strong style="color:var(--danger)">${errCount}</strong> ·
             Warning: <strong style="color:var(--warning)">${warnCount}</strong><br>
             Saldo awal kas tidak diubah oleh proses impor. Periksa nilainya melalui Pengaturan.
@@ -5586,7 +5602,7 @@
               </tbody>
             </table>
           </div>
-          <p style="font-size:0.75rem;color:var(--muted);margin-top:6px;">Menampilkan 30 baris pertama dari ${importRows.length} baris yang dapat diimpor.</p>
+          <p style="font-size:0.75rem;color:var(--muted);margin-top:6px;">Menampilkan 30 baris pertama dari ${importRows.length} baris yang akan disimpan untuk review.</p>
           ${importErrors.length ? `
             <div style="margin-top:12px;">
               <strong style="color:var(--danger);font-size:0.84rem;">${importErrors.length} baris ditolak — periksa data sumber</strong>
@@ -5637,24 +5653,59 @@
           '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
         })[ch]);
         if (!groups.size) {
-          host.innerHTML = '<p style="font-size:.8rem;color:var(--muted);">Tidak ada batch yang menunggu review.</p>';
+          host.innerHTML = '<p style="font-size:.8rem;color:var(--muted);">Tidak ada baris yang menunggu review. Riwayat batch yang sudah diputuskan tetap tersimpan di database.</p>';
           return;
         }
         host.innerHTML = '<div class="card-title">Batch menunggu review</div>' + Array.from(groups.entries()).map(([batchId, batch]) => {
           const valid = batch.filter(row => row._status === 'ok').length;
-          const warnings = batch.length - valid;
+          const warnings = batch.filter(row => row._status === 'warn').length;
+          const errors = batch.filter(row => row._status === 'error').length;
           const total = batch.reduce((sum, row) => sum + (Number(row.nilai) || 0), 0);
           const first = batch[0] || {};
-          return `<div class="card" style="margin:8px 0;padding:10px;">
-            <strong>${esc(first.source_file_name || 'Workbook historis')}</strong>
-            <div style="font-size:.78rem;color:var(--muted);margin:4px 0;">Batch ${esc(batchId)} · ${batch.length} baris · ${valid} valid · ${warnings} warning · Total nilai ${formatRp(total)}</div>
-            <button class="btn btn-primary btn-sm" type="button" onclick="approveStagedImportBatch('${esc(batchId)}')" ${valid ? '' : 'disabled'}>Setujui dan pindahkan ${valid} baris valid</button>
-            ${warnings ? '<p style="font-size:.75rem;color:var(--warning);margin:6px 0 0;">' + warnings + ' baris warning ditahan dan tidak dipindahkan sampai ditinjau.</p>' : ''}
-          </div>`;
+          const table = batch.map(row => {
+            const state = row._status || 'warn';
+            const action = state === 'ok' ? 'Valid' : '<button class="btn btn-outline btn-sm" type="button" onclick="rejectStagedImportRow(\'' + esc(row.id) + '\')">Tolak baris</button>';
+            return '<tr><td>' + esc(row.source_row || '—') + '</td><td>' + esc(row.tanggal || '—') + '</td><td>' + esc(row.jenis || '—') + '</td><td class="text-right">' + formatRp(Number(row.nilai) || 0) + '</td><td>' + esc(state) + '<div style="font-size:.7rem;color:var(--muted);">' + esc(row._msg || '') + '</div></td><td>' + action + '</td></tr>';
+          }).join('');
+          return '<div class="card" style="margin:8px 0;padding:10px;">' +
+            '<strong>' + esc(first.source_file_name || 'Workbook historis') + '</strong>' +
+            '<div style="font-size:.78rem;color:var(--muted);margin:4px 0;">Batch ' + esc(batchId) + ' · ' + batch.length + ' baris · ' + valid + ' valid · ' + warnings + ' warning · ' + errors + ' error · Total nilai ' + formatRp(total) + '</div>' +
+            '<div class="table-wrap" style="max-height:240px;"><table><thead><tr><th>Baris</th><th>Tanggal</th><th>Jenis</th><th>Nilai</th><th>Status / alasan</th><th>Tindakan</th></tr></thead><tbody>' + table + '</tbody></table></div>' +
+            '<button class="btn btn-primary btn-sm" type="button" style="margin-top:8px;" onclick="approveStagedImportBatch(\'' + esc(batchId) + '\')" ' + (valid ? '' : 'disabled') + '>Setujui dan pindahkan ' + valid + ' baris valid</button>' +
+            ((warnings || errors) ? '<p style="font-size:.75rem;color:var(--warning);margin:6px 0 0;">' + (warnings + errors) + ' baris exception tetap ditahan sampai diperbaiki atau ditolak satu per satu.</p>' : '') +
+            '</div>';
         }).join('');
       } catch (error) {
         host.textContent = 'Gagal memuat staging: ' + error.message;
       }
+    }
+
+    async function rejectStagedImportRow(rowId) {
+      const id = String(rowId || '');
+      if (!id || !confirm('Tolak baris staging ini? Catatan sumber tetap disimpan sebagai jejak audit.')) return;
+      await new Promise((resolve, reject) => {
+        let tx;
+        try {
+          tx = db.transaction('import_staging', 'readwrite');
+          const store = tx.objectStore('import_staging');
+          const req = store.get(id);
+          req.onsuccess = () => {
+            const row = req.result;
+            if (!row || row.status !== 'pending_review') { try { tx.abort(); } catch (_) {} return; }
+            store.put({...row,status:'rejected',review_status:'rejected',reviewed_at:new Date().toISOString()});
+          };
+          req.onerror = () => { try { tx.abort(); } catch (_) {} };
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('Penolakan baris staging gagal'));
+          tx.onabort = () => reject(tx.error || new Error('Status staging berubah; penolakan dibatalkan'));
+        } catch (error) {
+          if (tx) { try { tx.abort(); } catch (_) {} }
+          reject(error);
+        }
+      });
+      markDataChanged();
+      await loadImportStagingReview();
+      toast('Baris ditolak dan tetap tersimpan di staging.', 'info');
     }
 
     async function approveStagedImportBatch(batchId) {
@@ -5688,6 +5739,8 @@
               const clean = {...row, import_batch_id:id, import_source_row:row.source_row || null, status:row.transaction_status, status_data:'aktif'};
               delete clean._status;
               delete clean._msg;
+              delete clean.source_data;
+              delete clean.source_file_name;
               delete clean.batch_id;
               delete clean.review_status;
               delete clean.transaction_status;
@@ -5749,8 +5802,9 @@
         return;
       }
       const valid = pending.filter(row => row._status === 'ok').length;
-      const warnings = pending.length - valid;
-      if (!confirm('Simpan ' + pending.length + ' baris ke staging untuk review? ' + valid + ' valid, ' + warnings + ' warning akan ditahan. ' + skipped + ' duplikat dilewati. Belum ada transaksi yang dipindahkan.')) return;
+      const warnings = pending.filter(row => row._status === 'warn').length;
+      const errors = pending.filter(row => row._status === 'error').length;
+      if (!confirm('Simpan ' + pending.length + ' baris ke staging untuk review? ' + valid + ' valid, ' + warnings + ' warning dan ' + errors + ' error akan ditahan. ' + skipped + ' duplikat dilewati. Belum ada transaksi yang dipindahkan.')) return;
       const batchId = accountingId('IMP-BATCH');
       const now = new Date().toISOString();
       await new Promise((resolve, reject) => {
