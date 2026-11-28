@@ -1985,7 +1985,7 @@
           sebagai laporan final sebelum saldo awal dan rekening Bon Kas direkonsiliasi.
         </p>
       </div>
-      <div class="card">
+      <div class="card settings-anchor" id="settings-keamanan">
         <div class="card-title">Keamanan PIN + Sandi <span class="module-tag">Modul</span></div>
         <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
           Kunci lokal di perangkat ini (bukan server).<br>
@@ -2013,7 +2013,8 @@
           <button class="btn btn-outline btn-sm" type="button" onclick="removePin()">Nonaktifkan Kunci</button>
         </div>
       </div>
-      <div class="card">
+      <div class="card settings-anchor" id="settings-identitas">
+        <div class="card-title">Identitas Usaha & Periode</div>
         <div class="form-group">
           <label>Nama Usaha</label>
           <input type="text" id="setNamaUsaha" class="form-control" />
@@ -2023,8 +2024,8 @@
           <input type="text" id="setPeriode" class="form-control" placeholder="2026" />
         </div>
       </div>
-      <div class="card">
-        <div class="card-title">AKTIVA LANCAR — Saldo Awal</div>
+      <div class="card settings-anchor" id="settings-aset-lancar">
+        <div class="card-title">ASET LANCAR — Saldo Awal</div>
         <div class="form-group">
           <label>Saldo Awal Kas Gabungan (Kas Real + BK)</label>
           <input type="text" id="setSaldoKas" class="form-control input-rp" inputmode="numeric" />
@@ -2047,7 +2048,7 @@
           <input type="text" id="setSaldoPenerimaanYMH" class="form-control input-rp" inputmode="numeric" />
         </div>
       </div>
-      <div class="card">
+      <div class="card settings-anchor" id="settings-stok">
         <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
         <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
           Catat nilai stok hasil opname pada tanggal tertentu. Laporan HPP hanya memakai snapshot jika tanggal opname sama dengan tanggal akhir laporan dan saldo pembuka periode tersedia. Jika tidak, laporan akan menandai HPP sebagai estimasi.
@@ -2083,8 +2084,8 @@
           </table>
         </div>
       </div>
-      <div class="card">
-        <div class="card-title">AKTIVA TETAP — Saldo Awal</div>
+      <div class="card settings-anchor" id="settings-aset-tetap">
+        <div class="card-title">ASET TETAP — Saldo Awal</div>
         <div class="form-group">
           <label>Inventaris</label>
           <input type="text" id="setSaldoInventaris" class="form-control input-rp" inputmode="numeric" />
@@ -2094,8 +2095,8 @@
           <input type="text" id="setSaldoPenyusutanInventaris" class="form-control input-rp" inputmode="numeric" />
         </div>
       </div>
-      <div class="card">
-        <div class="card-title">PASIVA LANCAR — Saldo Awal</div>
+      <div class="card settings-anchor" id="settings-kewajiban">
+        <div class="card-title">KEWAJIBAN LANCAR & SALDO BK — Saldo Awal</div>
         <div class="form-group">
           <label>Saldo Awal Bon Kas (BK) — Total (otomatis dari per orang)</label>
           <input type="text" id="setSaldoBonKas" class="form-control input-rp" inputmode="numeric" readonly />
@@ -2126,8 +2127,8 @@
           <input type="text" id="setSaldoHutang" class="form-control input-rp" inputmode="numeric" />
         </div>
       </div>
-      <div class="card">
-        <div class="card-title">PASIVA TETAP / EKUITAS — Saldo Awal</div>
+      <div class="card settings-anchor" id="settings-ekuitas">
+        <div class="card-title">MODAL & EKUITAS — Saldo Awal</div>
         <div class="form-group">
           <label>Cadangan</label>
           <input type="text" id="setSaldoCadangan" class="form-control input-rp" inputmode="numeric" />
@@ -2153,7 +2154,7 @@
           <input type="text" id="setSaldoModal" class="form-control input-rp" inputmode="numeric" />
         </div>
       </div>
-      <button class="btn btn-primary btn-block" onclick="saveSettings()">Simpan Saldo Awal & Pengaturan</button>
+      <div class="settings-anchor" id="settings-simpan" style="margin:8px 0 14px;"><button class="btn btn-primary btn-block" onclick="saveSettings()">Simpan Semua Saldo Awal</button><p style="font-size:.75rem;color:var(--muted);margin-top:6px;text-align:center;">Pastikan angka sudah diperiksa terhadap buku sumber sebelum menyimpan.</p></div>
       <div class="card" style="margin-top:12px;">
         <div class="card-title">Tentang & Arah Pengembangan</div>
         <p style="font-size:0.85rem;margin-bottom:12px;">
@@ -2209,7 +2210,7 @@
     </button>
     <div class="nav-section-label">DATA &amp; ADMINISTRASI</div>
     <button class="nav-item" data-page="import" onclick="showPage('import')">
-      <span class="nav-ico">D</span>Import
+      <span class="nav-ico">D</span>Data & Backup
     </button>
     <button class="nav-item" data-page="settings" onclick="showPage('settings')">
       <span class="nav-ico">P</span>Pengaturan
@@ -2256,7 +2257,7 @@
           <select id="trxBkRekening" class="form-control">
             <option value="">— Pilih Rekening BK —</option>
           </select>
-          <small style="color:var(--muted);font-size:0.75rem;">Pilih NBA yang melakukan Bon Kas / Pembayaran BK. Kelola rekening di menu <strong>Data</strong>.</small>
+          <small style="color:var(--muted);font-size:0.75rem;">Pilih NBA yang melakukan Bon Kas / Pembayaran BK. Kelola rekening di menu <strong>Data & Backup</strong>.</small>
         </div>
         <div class="form-group">
           <label>Nilai (Rp) *</label>
@@ -6178,7 +6179,7 @@
       list.sort((a,b) => (a.nama||'').localeCompare(b.nama||''));
       if (!list.length) {
         sel.innerHTML = '<option value="">— Belum ada rekening BK —</option>';
-        toast('Belum ada rekening BK. Buka menu Data → Isi dari Default / Tambah Rekening', 'error');
+        toast('Belum ada rekening BK. Buka menu Data & Backup → Isi 24 Rekening Sumber / Tambah Rekening', 'error');
       } else {
         sel.innerHTML = '<option value="">— Pilih Rekening BK —</option>' +
           list.map(r => `<option value="${r.id}" data-nba="${String(r.nba).replace(/"/g,'')}" data-nama="${String(r.nama).replace(/"/g,'')}">${r.nba} — ${r.nama}</option>`).join('');
