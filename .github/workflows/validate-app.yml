@@ -1,6 +1,12 @@
 name: Validate HTML application
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "tests/**"
+      - ".github/workflows/validate-app.yml"
   push:
     branches: [main]
     paths:
