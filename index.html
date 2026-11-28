@@ -5412,10 +5412,25 @@
 
         // Cari sheet DATA_TRANSAKSI
         let sheetName = wb.SheetNames.find(n => ['DATA_TRANSAKSI', 'TRANSAKSI'].includes(n.trim().toUpperCase()));
-        if (!sheetName) sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('DATA_TRANSAKSI'));
-        if (!sheetName) sheetName = wb.SheetNames[0];
+        if (!sheetName) sheetName = wb.SheetNames.find(n => n.trim().toUpperCase().includes('DATA_TRANSAKSI'));
+        if (!sheetName) {
+          throw new Error('Sheet transaksi tidak ditemukan. Gunakan nama sheet DATA_TRANSAKSI atau Transaksi; sheet pertama tidak akan dipilih otomatis.');
+        }
 
         const ws = wb.Sheets[sheetName];
+        const headerRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+        const headerSet = new Set((headerRows[0] || []).map(value => String(value == null ? '' : value).trim().toUpperCase()));
+        const requiredHeaders = [
+          { label: 'TANGGAL', aliases: ['TANGGAL'] },
+          { label: 'JENIS', aliases: ['JENIS', 'JENIS_TRANSAKSI', 'JENIS TRANSAKSI'] },
+          { label: 'STATUS', aliases: ['STATUS'] },
+          { label: 'LOKASI', aliases: ['LOKASI'] },
+          { label: 'NILAI', aliases: ['NILAI', 'NOMINAL', 'JUMLAH'] }
+        ];
+        const missingHeaders = requiredHeaders.filter(item => !item.aliases.some(alias => headerSet.has(alias))).map(item => item.label);
+        if (missingHeaders.length) {
+          throw new Error('Header wajib sheet transaksi tidak lengkap: ' + missingHeaders.join(', ') + '. Periksa baris judul kolom pada workbook.');
+        }
         const json = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true, blankrows: false });
         // Normalize keys (trim + uppercase for matching)
         const normalized = json.map(row => {
