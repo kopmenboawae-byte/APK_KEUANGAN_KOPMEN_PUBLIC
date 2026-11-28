@@ -109,6 +109,7 @@
       max-width: 1100px;
       margin: 0 auto;
     }
+    .settings-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px}.settings-jump{min-height:42px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:600 .78rem var(--font);text-align:left;cursor:pointer}.settings-anchor{scroll-margin-top:84px}@media(min-width:700px){.settings-shortcuts{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .page { display: none; }
     .page.active { display: block; }
     .card {
@@ -1975,6 +1976,7 @@
 
     <div id="page-settings" class="page">
       <div class="section-title">Pengaturan & Saldo Awal</div>
+      <div class="card" style="border-left:4px solid var(--primary);"><div class="card-title">Pilih Bagian Pengaturan</div><p style="font-size:.82rem;color:var(--muted);margin-bottom:10px;">Gunakan pintasan agar tidak perlu mencari bagian satu per satu. Perubahan saldo berlaku setelah tombol Simpan Semua Saldo Awal ditekan.</p><div class="settings-shortcuts"><button class="settings-jump" type="button" onclick="document.getElementById('settings-identitas').scrollIntoView({behavior:'smooth',block:'start'})">Identitas & Periode</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-lancar').scrollIntoView({behavior:'smooth',block:'start'})">Kas & Aset Lancar</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-stok').scrollIntoView({behavior:'smooth',block:'start'})">Stok Opname</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-aset-tetap').scrollIntoView({behavior:'smooth',block:'start'})">Aset Tetap</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-kewajiban').scrollIntoView({behavior:'smooth',block:'start'})">Kewajiban & BK</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-ekuitas').scrollIntoView({behavior:'smooth',block:'start'})">Modal & Ekuitas</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-keamanan').scrollIntoView({behavior:'smooth',block:'start'})">Keamanan</button><button class="settings-jump" type="button" onclick="document.getElementById('settings-simpan').scrollIntoView({behavior:'smooth',block:'start'})">Simpan Perubahan</button></div></div>
       <div class="card" style="border-left:4px solid var(--warning);">
         <div class="card-title">Penting — Verifikasi Saldo Awal</div>
         <p style="font-size:0.82rem;color:var(--muted);margin:0;">
