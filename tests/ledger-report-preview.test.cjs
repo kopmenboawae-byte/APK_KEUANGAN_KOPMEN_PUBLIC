@@ -57,7 +57,7 @@ const calc=vm.runInNewContext('('+source+')',ctx);
 
  const builderStart=html.indexOf('function buildLedgerLaporanRows('),builderEnd=html.indexOf('async function loadLaporan(',builderStart);
  assert.ok(builderStart>=0&&builderEnd>builderStart,'ledger report row builder missing');
- const builderSource=html.slice(builderStart,builderEnd).trim().replace(/^function buildLedgerLaporanRows\\(/,'function(');
+ const builderSource=html.slice(builderStart,builderEnd).trim().replace('function buildLedgerLaporanRows(','function(');
  const builder=vm.runInNewContext('('+builderSource+')',{});
  const pnlRows=builder(result,'labarugi').rows;
  assert.equal(pnlRows.find(x=>x.label==='Laba Bersih').value,400);
