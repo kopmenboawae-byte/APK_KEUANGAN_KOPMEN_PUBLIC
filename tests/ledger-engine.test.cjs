@@ -45,6 +45,7 @@ assert.ok(html.includes("index('account_date').openCursor"), 'General Ledger que
 assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should aggregate through a cursor');
 assert.ok(html.includes("index('bk_account_date').openCursor"), 'BK subledger should query by holder and date');
 assert.ok(html.includes('saveBkAccountabilityDraft'), 'BK advance, return and accountability workflow must exist');
+assert.ok(html.includes("if (!editId && (jenis === 'BON KAS' || jenis === 'PEMBAYARAN BK'))"), 'New BK activity must use the controlled subledger workflow');
 assert.ok(html.includes('bk_accountability_record'), 'BK journal and subledger record must be linked');
 assert.ok(html.includes('amount>balance.ledger_balance'), 'BK returns/accountability must not exceed posted advance balance');
 assert.ok(html.includes("bkRecord.kind==='accountability'&&!String(bkRecord.evidence_reference||'').trim()"), 'Expense accountability requires evidence');
