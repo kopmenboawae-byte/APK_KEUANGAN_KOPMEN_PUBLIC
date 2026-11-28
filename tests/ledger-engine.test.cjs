@@ -46,6 +46,11 @@ assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should ag
 assert.ok(html.includes("index('bk_account_date').openCursor"), 'BK subledger should query by holder and date');
 assert.ok(html.includes('saveBkAccountabilityDraft'), 'BK advance, return and accountability workflow must exist');
 assert.ok(html.includes('bk_accountability_record'), 'BK journal and subledger record must be linked');
+assert.ok(html.includes('amount>balance.ledger_balance'), 'BK returns/accountability must not exceed posted advance balance');
+assert.ok(html.includes("current.source_type==='reversal'"), 'Journal reversal must update linked subledger status');
+assert.ok(html.includes("status:'reversed'"), 'Reversed BK/opening records must be marked reversed');
+assert.ok(html.includes('journalRefs.length||accountabilityRefs.length'), 'BK master with journal history must not be deletable');
+assert.ok(html.includes("bk_rekening_id: row.querySelector('.journal-bk-holder').value || null"), 'Manual journals must capture BK holder subledger id');
 assert.ok(html.includes('status:\'posted\',posted_at:now,journal_id:id'), 'Posting must update BK subledger status');
 
 assert.ok(html.includes('id="accountingWorkbench"'), 'Journal workbench must remain under Transactions');
@@ -136,4 +141,4 @@ assert.throws(() => validate([
   { account_code: '1101', debit: 0, credit: 500 }
 ], accounts), /Pilih pemegang Bon Kas/);
 
-console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger and safety guards.');
+console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
