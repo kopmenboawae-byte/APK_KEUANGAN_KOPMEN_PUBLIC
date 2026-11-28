@@ -27,5 +27,5 @@ ready(proposal({jenis:'PEMBAYARAN BK',bk_rekening_id:'BK-1'}),['1101','1106']);
 held(proposal({jenis:'PEMBAYARAN BON'}),'alokasi piutang');held(proposal({jenis:'PELUNASAN BARANG'}),'pemasok');
 held(proposal({jenis:'TITIPAN KAS'}),'titipan');held(proposal({jenis:'PENERIMAAN LAIN-LAIN'}),'Substansi');held(proposal({jenis:'PENGELUARAN LAIN-LAIN'}),'Substansi');
 held(proposal({nilai:1000.5}),'rupiah bulat');held(proposal({tanggal:'2026-02-30'}),'Tanggal');
-held(proposal({},bk,[...accounts.filter(x=>x.code!=='6101'),{code:'6101',active:true,classification_status:'needs_review'}]),'terverifikasi');
+held(proposal({jenis:'BIAYA'},bk,[...accounts.filter(x=>x.code!=='6101'),{code:'6101',active:true,classification_status:'needs_review'}]),'terverifikasi');
 console.log('Legacy ledger migration tests: 22 mapping/safety assertions passed.');
