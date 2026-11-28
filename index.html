@@ -6721,6 +6721,15 @@
           if (p && p.key === key) related.push(t);
         });
       }
+      const journalRefs = await new Promise((resolve,reject)=>{
+        const tx=db.transaction('journal_lines','readonly'),req=tx.objectStore('journal_lines').index('bk_rekening_id').getAll(id);
+        req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);
+      });
+      const accountabilityRefs=(await getAll('bk_accountability')).filter(r=>String(r.bk_rekening_id)===String(id));
+      if(journalRefs.length||accountabilityRefs.length){
+        toast('Tidak bisa dihapus: rekening sudah memiliki riwayat subledger/jurnal. Pertahankan master agar histori tetap utuh.','error');
+        return;
+      }
       if (related.length) {
         toast('Tidak bisa dihapus: masih ada ' + related.length + ' transaksi. Nonaktifkan saja atau hapus transaksi dulu.', 'error');
         return;
