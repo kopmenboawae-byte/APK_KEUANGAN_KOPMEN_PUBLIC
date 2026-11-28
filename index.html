@@ -3726,6 +3726,7 @@
         posisi: {
           saldoKas, kasReal, saldoBk, saldoSibuhar, saldoPersediaan,
           piutang: Math.max(0, piut), hutang: Math.max(0, hut),
+          piutangRaw: piut, hutangRaw: hut,
           modal: settings.saldoAwalModal || 0
         }
       };
@@ -3767,15 +3768,18 @@
         const modalPenyerta = settings.saldoAwalModalPenyertaKB || 0;
         const donasiKB = settings.saldoAwalDonasiKB || 0;
         const shu = (settings.saldoAwalSHU || 0) + (p.labaBersihKumulatif || 0);
-        const hutangBarang = s.hutang || 0;
+        const piutangDagang = Math.max(0, Number(s.piutangRaw) || 0);
+        const uangMukaPemasok = Math.max(0, -(Number(s.hutangRaw) || 0));
+        const uangMukaPelanggan = Math.max(0, -(Number(s.piutangRaw) || 0));
+        const hutangBarang = Math.max(0, Number(s.hutangRaw) || 0);
 
         // Neraca menampilkan Kas Real saja. Saldo BK dan angka gabungan menjadi catatan, bukan aktiva tambahan.
         const kasGabungan = s.kasReal + s.saldoBk;
-        const aktivaLancar = s.kasReal + s.saldoSibuhar + s.saldoPersediaan + s.piutang + ymh;
+        const aktivaLancar = s.kasReal + s.saldoSibuhar + s.saldoPersediaan + piutangDagang + uangMukaPemasok + ymh;
         const aktivaTetap = inventaris - Math.abs(penyusutan);
         const totalAktiva = aktivaLancar + aktivaTetap;
 
-        const pasivaLancar = pinjamanKSP + titipan + simPokok + simWajib + hutangBarang;
+        const pasivaLancar = pinjamanKSP + titipan + simPokok + simWajib + hutangBarang + uangMukaPelanggan;
         const pasivaTetap = cadangan + danaPKKSP + modalPenyerta + donasiKB + shu + (settings.saldoAwalModal || 0);
         const totalPasiva = pasivaLancar + pasivaTetap;
         const selisihNeraca = totalAktiva - totalPasiva;
@@ -3786,7 +3790,8 @@
         rows.push({ label: 'Kas Real', value: s.kasReal, indent: true });
         rows.push({ label: 'Sibuhar', value: s.saldoSibuhar, indent: true });
         rows.push({ label: 'Persediaan', value: s.saldoPersediaan, indent: true });
-        rows.push({ label: 'Piutang Dagang', value: s.piutang, indent: true });
+        rows.push({ label: 'Piutang Dagang', value: piutangDagang, indent: true });
+        if (uangMukaPemasok) rows.push({ label: 'Uang Muka Pemasok (dari saldo hutang negatif)', value: uangMukaPemasok, indent: true });
         rows.push({ label: 'Penerimaan YMH Diterima', value: ymh, indent: true });
         rows.push({ label: 'Jumlah Aktiva Lancar', value: aktivaLancar, bold: true, border: true });
 
@@ -3803,6 +3808,7 @@
         rows.push({ label: 'Simpanan Pokok', value: simPokok, indent: true });
         rows.push({ label: 'Simpanan Wajib', value: simWajib, indent: true });
         if (hutangBarang) rows.push({ label: 'Hutang Barang', value: hutangBarang, indent: true });
+        if (uangMukaPelanggan) rows.push({ label: 'Uang Muka Pelanggan (dari saldo piutang negatif)', value: uangMukaPelanggan, indent: true });
         rows.push({ label: 'Jumlah Pasiva Lancar', value: pasivaLancar, bold: true, border: true });
 
         rows.push({ section: 'Pasiva Tetap', sub: true });
@@ -3828,7 +3834,7 @@
                 `Kas (Kas Real + Saldo BK) — informasi manajemen, bukan kas fisik dan tidak ditambahkan ke total aktiva: ${formatRp(kasGabungan)}.\n` +
                 `Sesuai kebijakan penyajian internal KOPMEN, saldo BK dicatat terpisah dari total aktiva; perlakuan ini perlu diungkapkan saat laporan digunakan di luar internal.\n` +
                 `Selisih Aktiva−Pasiva: ${formatRp(selisihNeraca)}.` +
-                (p.saldoAnomalies && p.saldoAnomalies.length ? `\nPERHATIAN PIUTANG/HUTANG: ${p.saldoAnomalies.join(' ')}` : '') +
+                (p.saldoAnomalies && p.saldoAnomalies.length ? `\nPERHATIAN PIUTANG/HUTANG: saldo negatif direklasifikasi sementara sebagai uang muka pelanggan/pemasok. Periksa pihak, tanggal, bukti, dan penyelesaian sebelum mengesahkan laporan. ${p.saldoAnomalies.join(' ')}` : '') +
                 (p.stocktakeDate ? `\nStok opname tercatat per ${formatTgl(p.stocktakeDate)}: ${formatRp(s.saldoPersediaan)}.` : '') +
                 (p.inventoryWarning ? `\nPERHATIAN PERSEDIAAN: ${p.inventoryWarning}` : '')
         });
