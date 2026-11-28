@@ -57,6 +57,8 @@ const createDraftEnd = html.indexOf('async function getJournalEntryDetails', cre
 assert.ok(createDraftStart >= 0 && createDraftEnd > createDraftStart);
 assert.ok(html.slice(createDraftStart, createDraftEnd).includes("stores.push('opening_balance_versions')"), 'Opening journal and version must be stored atomically');
 assert.ok(html.slice(createDraftStart, createDraftEnd).includes('opening_balance_version'), 'Draft creation must accept the opening version record');
+assert.ok(html.includes('saveOpeningJournalDraft()'), 'Opening journal draft action must be available in Transactions');
+assert.ok(html.includes("status:'void'"), 'Draft cancellation must preserve a void status rather than deleting the journal');
 assert.ok(html.includes('VERSI_SALDO_AWAL_BK'), 'BK opening changes must be audited');
 assert.ok(!html.includes('id="setSaldoBkDetail"'), 'Duplicate BK opening input in Settings must stay removed');
 assert.ok(!html.includes('settings.saldoAwalPiutang = total'), 'Receivable breakdown must not overwrite opening receivables');
