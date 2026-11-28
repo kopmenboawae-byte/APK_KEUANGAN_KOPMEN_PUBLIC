@@ -169,4 +169,8 @@ assert.ok(!html.slice(html.indexOf('async function doImport()'), html.indexOf('/
 assert.ok(html.includes('transaction_status:row.status'), 'Staging must preserve the original TUNAI/KREDIT value separately from its review status');
 assert.ok(html.includes('status:row.transaction_status'), 'Approved staging rows must restore the original transaction status');
 
+assert.ok(html.includes("const rejectedRow = {"), 'Parser errors must also be persisted in staging for durable review');
+assert.ok(html.includes("async function rejectStagedImportRow(rowId)"), 'Reviewers must be able to reject individual staging exceptions without deleting the audit row');
+assert.ok(html.includes("row._status === 'error'"), 'Staging review must distinguish parser errors from warnings');
+
 console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
