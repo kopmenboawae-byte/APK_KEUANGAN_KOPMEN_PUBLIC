@@ -158,4 +158,12 @@ assert.ok(!html.includes("if (!sheetName) sheetName = wb.SheetNames[0]"), 'Impor
 assert.ok(html.includes("const headerRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false })"), 'Importer must inspect the transaction sheet header row');
 assert.ok(html.includes("const missingHeaders = requiredHeaders.filter"), 'Importer must reject workbooks missing required transaction columns');
 
+
+assert.ok(html.includes("status:'pending_review'"), 'Imported rows must enter persistent staging before transactions');
+assert.ok(html.includes("async function loadImportStagingReview()"), 'Staging batches must be reviewable after reload');
+assert.ok(html.includes("async function approveStagedImportBatch(batchId)"), 'Only an explicit review action may commit staged rows');
+assert.ok(html.includes("tx=db.transaction(stores, 'readwrite')") || html.includes("db.transaction(stores, 'readwrite')"), 'Staging approval must commit transaction rows and staging status atomically');
+assert.ok(html.includes("if (row._status !== 'ok') { held++; return; }"), 'Warning rows must remain held for review');
+assert.ok(!html.slice(html.indexOf('async function doImport()'), html.indexOf('// ===================== BACKUP / RESTORE')).includes("db.transaction('transaksi', 'readwrite')"), 'Import staging must not write directly to transactions');
+
 console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
