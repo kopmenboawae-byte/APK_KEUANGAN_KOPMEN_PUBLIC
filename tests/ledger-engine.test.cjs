@@ -45,6 +45,8 @@ assert.ok(html.includes("index('account_date').openCursor"), 'General Ledger que
 assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should aggregate through a cursor');
 assert.ok(html.includes('id="accountingWorkbench"'), 'Journal workbench must remain under Transactions');
 assert.ok(html.includes('id="bkMasterTable"'), 'BK administration table must exist');
+assert.ok(html.includes('id="bkAdminSection"'), 'BK opening administration must have a direct section anchor');
+assert.ok(html.includes("showPage('transaksi'); setTimeout(()=>document.getElementById('bkAdminSection')"), 'BK balance shortcut must route to Transactions');
 assert.ok(html.includes('id="settings-stok"'), 'Stocktake administration must exist');
 assert.ok(html.includes('id="tutupJurnalSection"'), 'Daily journal close must be under Transactions');
 assert.ok(!html.includes('id="page-tutupjurnal"'), 'Daily close must not remain a separate operational page');
