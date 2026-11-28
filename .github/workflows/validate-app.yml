@@ -71,3 +71,6 @@ jobs:
 
       - name: Test legacy ledger IndexedDB migration
         run: node tests/legacy-ledger-runtime.test.cjs
+
+      - name: Test subledger party review with IndexedDB
+        run: node tests/subledger-party-runtime.test.cjs

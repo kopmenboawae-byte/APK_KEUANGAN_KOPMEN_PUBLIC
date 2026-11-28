@@ -1638,6 +1638,18 @@
           <button class="btn btn-primary btn-sm" type="button" onclick="prepareLegacyTransactionLedgerDrafts()">Siapkan Draft Jurnal Historis</button>
           <div id="legacyLedgerMigrationSummary" style="margin-top:10px;font-size:.78rem;color:var(--muted);">Ringkasan migrasi belum dimuat.</div>
         </div>
+        <div class="card" style="margin:12px 0;border-left:4px solid var(--warning);">
+          <div class="card-title">Migrasi Transaksi Historis ke Ledger · Draft Saja</div>
+          <p style="font-size:.78rem;color:var(--muted);">Menyiapkan draft jurnal yang tertaut ke ID transaksi sumber. Tidak ada jurnal yang diposting. Transaksi kredit tanpa alokasi pihak, titipan, transaksi lain-lain yang belum jelas, dan BK tanpa rekening yang cocok akan ditahan. HPP tidak diambil dari laba POS.</p>
+          <button class="btn btn-primary btn-sm" type="button" onclick="prepareLegacyTransactionLedgerDrafts()">Siapkan Draft Jurnal Historis</button>
+          <div id="legacyLedgerMigrationSummary" style="margin-top:10px;font-size:.78rem;color:var(--muted);">Ringkasan migrasi belum dimuat.</div>
+        </div>
+        <div class="card" style="margin:12px 0;">
+          <div class="card-title">Verifikasi Subledger Anggota & Pemasok</div>
+          <p style="font-size:.78rem;color:var(--muted);">Ekstrak kandidat pihak dari rincian piutang, pembayaran bon, dan hutang barang. Kandidat tidak otomatis diverifikasi. Cocokkan kode/nama dengan master anggota atau bukti pemasok; wajib isi catatan bukti sebelum verifikasi.</p>
+          <button class="btn btn-outline btn-sm" type="button" onclick="stageLegacySubledgerPartyCandidates()">Ekstrak Kandidat Pihak</button>
+          <div id="legacySubledgerPartyReview" style="margin-top:10px;font-size:.78rem;color:var(--muted);">Kandidat subledger belum dimuat.</div>
+        </div>
         <form id="manualJournalForm" onsubmit="saveManualJournalDraft(event)">
           <div class="grid-2">
             <div class="form-group"><label>Tanggal jurnal *</label><input type="date" id="manualJournalDate" class="form-control" required /></div>
@@ -7468,20 +7480,59 @@
       return '—';
     }
 
-    function buildLegacyTransactionJournalProposal(row,bkRows,accounts) {
+    function normalizeLegacyPartyCode(value,type) {
+      if(type==='member')return String(value||'').replace(/\D/g,'');
+      return String(value||'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'');
+    }
+    function parseLegacyPartyAllocations(row) {
+      const kind=String(row&&row.jenis||'').toUpperCase(),status=String(row&&row.status||'').toUpperCase(),text=String(row&&row.keterangan||''),amount=Number(row&&row.nilai);
+      if(!Number.isSafeInteger(amount)||amount<=0)return{status:'hold',reason:'Nilai sumber tidak valid untuk alokasi pihak.'};
+      let partyType='',allocations=[];
+      if((kind==='PENJUALAN'&&status==='KREDIT')||kind==='PEMBAYARAN BON'){
+        partyType='member';
+        const re=/^\s*([\d.]+)\s*[-:]\s*(.*?)\s*(?::|=)\s*Rp?\s*([\d.,]+)\s*$/gmi;let m;
+        while((m=re.exec(text))!==null){const code=normalizeLegacyPartyCode(m[1],'member'),name=String(m[2]||'').trim(),value=Number(String(m[3]).replace(/\D/g,''));if(code&&name&&Number.isSafeInteger(value)&&value>0)allocations.push({party_type:partyType,code,display_code:m[1].trim(),name,amount:value});}
+        if(!allocations.length&&kind==='PEMBAYARAN BON'){
+          const one=text.match(/Pembayaran Bon\s*\(\s*([\d.]+)\s*:\s*([^)]+)\)/i);
+          if(one){const code=normalizeLegacyPartyCode(one[1],'member'),name=String(one[2]||'').trim();if(code&&name)allocations.push({party_type:partyType,code,display_code:one[1].trim(),name,amount});}
+        }
+      }else if((kind==='PEMBELIAN BARANG'&&status==='KREDIT')||kind==='PELUNASAN BARANG'){
+        partyType='supplier';const marker=/HUTANG BARANG\s*:/i.exec(text);if(!marker)return{status:'hold',reason:'Rincian pemasok/faktur tidak ditemukan.'};
+        const tail=text.slice(marker.index+marker[0].length);
+        tail.split(/\r?\n/).forEach(line=>{const m=line.match(/^\s*(.+?)\s*=\s*Rp?\s*([\d.,]+)/i);if(!m)return;const name=String(m[1]||'').trim(),value=Number(String(m[2]).replace(/\D/g,'')),code=normalizeLegacyPartyCode(name,'supplier');if(name&&code&&Number.isSafeInteger(value)&&value>0)allocations.push({party_type:partyType,code,display_code:name,name,amount:value});});
+      }else return{status:'hold',reason:'Jenis transaksi ini tidak memerlukan alokasi party pada parser ini.'};
+      if(!allocations.length)return{status:'hold',reason:'Format alokasi pihak tidak dikenali.'};
+      const merged=new Map();
+      for(const item of allocations){const key=item.code,old=merged.get(key);if(old&&old.name.toUpperCase()!==item.name.toUpperCase())return{status:'hold',reason:'Kode pihak memiliki nama berbeda dalam satu transaksi.'};if(old)old.amount+=item.amount;else merged.set(key,{...item});}
+      allocations=Array.from(merged.values());
+      const sum=allocations.reduce((n,item)=>n+item.amount,0);
+      if(sum!==amount)return{status:'hold',reason:'Jumlah alokasi pihak '+sum+' tidak sama dengan nilai transaksi '+amount+'.'};
+      return{status:'ready',party_type:partyType,allocations,total:sum};
+    }
+
+    function buildLegacyTransactionJournalProposal(row,bkRows,accounts,partyRows) {
       const hold=reason=>({status:'hold',reason,source_key:row&&row.id!=null?'LEGACY-TRX:'+String(row.id):null,lines:[]});
       if(!row||row.id==null)return hold('ID transaksi sumber tidak tersedia.');
       if(!accountingIsValidDate(row.tanggal))return hold('Tanggal sumber tidak valid.');
       const amount=Number(row.nilai),kind=String(row.jenis||'').trim().toUpperCase(),status=String(row.status||'').trim().toUpperCase();
       if(!Number.isSafeInteger(amount)||amount<=0)return hold('Nilai harus rupiah bulat positif.');
       if(!['TUNAI','KREDIT'].includes(status))return hold('Status transaksi tidak dikenal.');
-      const memo=String(row.keterangan||'').trim().slice(0,160);let lines=[];
+      const memo=String(row.keterangan||'').trim().slice(0,160),parties=partyRows||[];let lines=[];
+      const resolveParties=parsed=>{
+        const missing=parsed.allocations.filter(item=>!parties.find(p=>p.type===item.party_type&&p.code===(item.party_type==='member'?'MEMBER:':'SUPPLIER:')+item.code&&p.verification_status==='verified'));
+        return missing;
+      };
+      const partyId=item=>parties.find(p=>p.type===item.party_type&&p.code===(item.party_type==='member'?'MEMBER:':'SUPPLIER:')+item.code&&p.verification_status==='verified')?.id||null;
       if(kind==='PENJUALAN'){
-        if(status!=='TUNAI')return hold('Penjualan kredit memerlukan alokasi piutang per anggota.');
-        lines=[{account_code:'1101',debit:amount,credit:0,memo:'Penjualan tunai'},{account_code:'4101',debit:0,credit:amount,memo:'Pendapatan penjualan'}];
+        if(status==='TUNAI')lines=[{account_code:'1101',debit:amount,credit:0,memo:'Penjualan tunai'},{account_code:'4101',debit:0,credit:amount,memo:'Pendapatan penjualan'}];
+        else{const parsed=parseLegacyPartyAllocations(row);if(parsed.status!=='ready')return hold(parsed.reason);const missing=resolveParties(parsed);if(missing.length)return hold('Anggota belum diverifikasi: '+missing.map(x=>x.display_code).join(', '));lines=parsed.allocations.map(x=>({account_code:'1104',party_id:partyId(x),debit:x.amount,credit:0,memo:'Piutang anggota '+x.display_code}));lines.push({account_code:'4101',debit:0,credit:amount,memo:'Pendapatan penjualan kredit'});}
       }else if(kind==='PEMBELIAN BARANG'){
-        if(status!=='TUNAI')return hold('Pembelian kredit memerlukan pemasok dan faktur hutang.');
-        lines=[{account_code:'1105',debit:amount,credit:0,memo:'Pembelian persediaan'},{account_code:'1101',debit:0,credit:amount,memo:'Pembayaran pembelian tunai'}];
+        if(status==='TUNAI')lines=[{account_code:'1105',debit:amount,credit:0,memo:'Pembelian persediaan'},{account_code:'1101',debit:0,credit:amount,memo:'Pembayaran pembelian tunai'}];
+        else{const parsed=parseLegacyPartyAllocations(row);if(parsed.status!=='ready')return hold(parsed.reason);const missing=resolveParties(parsed);if(missing.length)return hold('Pemasok belum diverifikasi: '+missing.map(x=>x.name).join(', '));lines=parsed.allocations.map(x=>({account_code:'1105',debit:x.amount,credit:0,memo:'Persediaan dari '+x.name}));lines.push(...parsed.allocations.map(x=>({account_code:'2101',party_id:partyId(x),debit:0,credit:x.amount,memo:'Hutang pemasok '+x.name})));}
+      }else if(kind==='PEMBAYARAN BON'){
+        const parsed=parseLegacyPartyAllocations(row);if(parsed.status!=='ready')return hold(parsed.reason);const missing=resolveParties(parsed);if(missing.length)return hold('Anggota belum diverifikasi: '+missing.map(x=>x.display_code).join(', '));lines=[{account_code:'1101',debit:amount,credit:0,memo:'Penerimaan pembayaran bon'}];lines.push(...parsed.allocations.map(x=>({account_code:'1104',party_id:partyId(x),debit:0,credit:x.amount,memo:'Pelunasan piutang '+x.display_code})));
+      }else if(kind==='PELUNASAN BARANG'){
+        const parsed=parseLegacyPartyAllocations(row);if(parsed.status!=='ready')return hold(parsed.reason);const missing=resolveParties(parsed);if(missing.length)return hold('Pemasok belum diverifikasi: '+missing.map(x=>x.name).join(', '));lines=parsed.allocations.map(x=>({account_code:'2101',party_id:partyId(x),debit:x.amount,credit:0,memo:'Pelunasan hutang '+x.name}));lines.push({account_code:'1101',debit:0,credit:amount,memo:'Pembayaran hutang barang'});
       }else if(kind==='BIAYA'){
         if(status!=='TUNAI')return hold('Status biaya bukan TUNAI.');
         lines=[{account_code:'6101',debit:amount,credit:0,memo:'Beban operasional · '+memo},{account_code:'1101',debit:0,credit:amount,memo:'Pembayaran biaya'}];
@@ -7490,14 +7541,13 @@
         lines=kind==='STOR SIBUHAR'?[{account_code:'1107',debit:amount,credit:0,memo:'Setor Sibuhar'},{account_code:'1101',debit:0,credit:amount,memo:'Kas disetor ke Sibuhar'}]:[{account_code:'1101',debit:amount,credit:0,memo:'Tarik Sibuhar'},{account_code:'1107',debit:0,credit:amount,memo:'Pengurangan Sibuhar'}];
       }else if(kind==='BON KAS'||kind==='PEMBAYARAN BK'){
         if(status!=='TUNAI')return hold('Mutasi BK harus berstatus TUNAI.');
-        let bk=(bkRows||[]).find(item=>String(item.id)===String(row.bk_rekening_id||''))||null;
-        const parsed=parseBkKeterangan(row.keterangan||'');
+        let bk=(bkRows||[]).find(item=>String(item.id)===String(row.bk_rekening_id||''))||null;const parsed=parseBkKeterangan(row.keterangan||'');
         if(bk&&parsed&&normNba(bk.nba)!==parsed.key)return hold('NBA keterangan tidak cocok dengan rekening BK tertaut.');
         if(!bk&&parsed){const matches=bkRows.filter(item=>normNba(item.nba)===parsed.key);if(matches.length===1)bk=matches[0];else return hold(matches.length?'NBA cocok ke lebih dari satu rekening BK.':'NBA tidak ditemukan di master BK.');}
         if(!bk)return hold('Rekening BK belum dipetakan secara unik.');
         lines=kind==='BON KAS'?[{account_code:'1106',bk_rekening_id:bk.id,debit:amount,credit:0,memo:'Uang muka BK '+bk.nba},{account_code:'1101',debit:0,credit:amount,memo:'Kas diserahkan ke pemegang BK'}]:[{account_code:'1101',debit:amount,credit:0,memo:'Pembayaran BK'},{account_code:'1106',bk_rekening_id:bk.id,debit:0,credit:amount,memo:'Pengurangan uang muka BK '+bk.nba}];
       }else{
-        const reasons={'PEMBAYARAN BON':'Perlu alokasi piutang anggota/faktur.','PELUNASAN BARANG':'Perlu pemetaan pemasok dan faktur.','TITIPAN KAS':'Klasifikasi kewajiban titipan belum diverifikasi.','PENERIMAAN LAIN-LAIN':'Substansi penerimaan harus diklasifikasikan.','PENGELUARAN LAIN-LAIN':'Substansi pengeluaran harus diklasifikasikan.'};
+        const reasons={'TITIPAN KAS':'Klasifikasi kewajiban titipan belum diverifikasi.','PENERIMAAN LAIN-LAIN':'Substansi penerimaan harus diklasifikasikan.','PENGELUARAN LAIN-LAIN':'Substansi pengeluaran harus diklasifikasikan.'};
         return hold(reasons[kind]||'Jenis transaksi belum memiliki aturan posting historis yang disetujui.');
       }
       const map=new Map((accounts||[]).map(item=>[String(item.code),item]));
@@ -7506,14 +7556,69 @@
       return{status:'ready',source_key:'LEGACY-TRX:'+String(row.id),source_type:'legacy_transaction',source_id:String(row.id),tanggal:row.tanggal,description:'Migrasi '+kind+' '+row.tanggal,notes:'Sumber '+row.id+'; batch '+(row.import_batch_id||'legacy')+'; baris '+(row.import_source_row||row.source_row||'—')+'. HPP tidak dijurnal dari laba POS.',lines};
     }
 
+    async function stageLegacySubledgerPartyCandidates(){
+      if(!confirm('Ekstrak kandidat anggota dan pemasok dari rincian transaksi historis? Kandidat akan berstatus pending review, tidak otomatis diverifikasi.'))return;
+      try{
+        const [all,existing]=await Promise.all([getAccountingTransactions(),getAll('subledger_parties')]);
+        const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row)),candidates=new Map();
+        legacy.forEach(row=>{const parsed=parseLegacyPartyAllocations(row);if(parsed.status!=='ready')return;parsed.allocations.forEach(item=>{
+          const code=(item.party_type==='member'?'MEMBER:':'SUPPLIER:')+item.code,key=code;
+          const candidate=candidates.get(key)||{type:item.party_type,code,display_code:item.display_code,name:item.name,name_variants:[],source_refs:[]};
+          if(!candidate.name_variants.some(n=>n.toUpperCase()===item.name.toUpperCase()))candidate.name_variants.push(item.name);
+          if(!candidate.source_refs.some(ref=>ref.transaction_id===String(row.id)))candidate.source_refs.push({transaction_id:String(row.id),source_row:row.import_source_row||row.source_row||null,batch_id:row.import_batch_id||null});
+          candidates.set(key,candidate);
+        });});
+        let created=0,updated=0,conflicts=0;
+        for(const candidate of candidates.values()){
+          let record=existing.find(p=>p.code===candidate.code);
+          if(!record){record={id:accountingId('PTY'),type:candidate.type,code:candidate.code,display_code:candidate.display_code,name:candidate.name,name_variants:candidate.name_variants,source_refs:candidate.source_refs,verification_status:candidate.name_variants.length>1?'name_conflict':'pending_review',created_at:new Date().toISOString(),created_by:'system-rule'};created++;}
+          else{
+            const variants=[...(record.name_variants||[record.name||''])].filter(Boolean);
+            candidate.name_variants.forEach(n=>{if(!variants.some(v=>v.toUpperCase()===n.toUpperCase()))variants.push(n);});
+            record={...record,name_variants:variants,source_refs:[...(record.source_refs||[]),...candidate.source_refs.filter(ref=>!(record.source_refs||[]).some(old=>old.transaction_id===ref.transaction_id))]};
+            if(variants.length>1){record.verification_status='name_conflict';conflicts++;}
+            updated++;
+          }
+          if(candidate.name_variants.length>1)conflicts++;
+          await put('subledger_parties',record);
+        }
+        if(created||updated)await put('change_history',{target_type:'subledger_party',target_id:'legacy-import-candidates',changed_at:new Date().toISOString(),action:'STAGE_SUBLEDGER_PARTY_CANDIDATES',created,updated,conflicts,reviewer:'system-rule'});
+        if(created||updated)markDataChanged();
+        await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();
+        toast('Kandidat pihak disimpan: '+created+' baru, '+updated+' diperbarui, '+conflicts+' konflik nama. Semua tetap menunggu verifikasi.',created?'success':'info');
+      }catch(error){toast('Ekstraksi kandidat pihak gagal: '+error.message,'error');}
+    }
+
+    async function loadLegacySubledgerPartyReview(){
+      const host=document.getElementById('legacySubledgerPartyReview');if(!host)return;
+      try{
+        const parties=await getAll('subledger_parties'),pending=parties.filter(p=>p.verification_status!=='verified'),verified=parties.length-pending.length;
+        const esc=accountingEscapeHtml;
+        const rows=pending.map(p=>'<tr><td>'+esc(p.type)+'</td><td>'+esc(p.display_code||p.code)+'</td><td>'+esc(p.verification_status)+'</td><td>'+esc((p.name_variants||[p.name]).filter(Boolean).join(' / '))+'</td><td>'+((p.source_refs||[]).length)+'</td><td><form onsubmit="verifyLegacySubledgerParty(event,\''+esc(p.id)+'\')"><input class="form-control form-control-sm" name="name" required value="'+esc(p.name||'')+'" placeholder="Nama terverifikasi"><textarea class="form-control form-control-sm" name="evidence" required rows="2" placeholder="Bukti/rujukan verifikasi (wajib)"></textarea><button class="btn btn-primary btn-sm" type="submit">Verifikasi pihak</button></form></td></tr>').join('');
+        host.innerHTML='<div><strong>Total pihak:</strong> '+parties.length+' · <strong>Verified:</strong> '+verified+' · <strong>Menunggu/konflik:</strong> '+pending.length+'</div>'+
+          (pending.length?'<div class="table-wrap" style="max-height:320px;margin-top:8px;"><table><thead><tr><th>Tipe</th><th>Kode</th><th>Status</th><th>Nama / varian sumber</th><th>Sumber</th><th>Verifikasi & bukti</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<p style="color:var(--success);margin-top:6px;">Semua kandidat telah diverifikasi.</p>');
+      }catch(error){host.textContent='Gagal memuat review subledger: '+error.message;}
+    }
+
+    async function verifyLegacySubledgerParty(event,partyId){
+      event.preventDefault();const form=event.currentTarget,name=String(form.elements.namedItem('name').value||'').trim(),evidence=String(form.elements.namedItem('evidence').value||'').trim();
+      try{
+        if(!name||!evidence)throw new Error('Nama dan bukti verifikasi wajib diisi.');
+        const party=(await getAll('subledger_parties')).find(p=>String(p.id)===String(partyId));if(!party)throw new Error('Kandidat pihak tidak ditemukan.');
+        const now=new Date().toISOString(),updated={...party,name,verification_status:'verified',verified_at:now,verified_by:'local-user',verification_note:evidence};
+        await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(['subledger_parties','change_history'],'readwrite');tx.objectStore('subledger_parties').put(updated);tx.objectStore('change_history').add({target_type:'subledger_party',target_id:String(partyId),changed_at:now,action:'VERIFY_SUBLEDGER_PARTY',before:{name:party.name,verification_status:party.verification_status},after:{name,verification_status:'verified'},evidence,reviewer:'local-user'});tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Verifikasi pihak gagal'));tx.onabort=()=>reject(tx.error||new Error('Verifikasi pihak dibatalkan'));}catch(error){reject(error);}});
+        markDataChanged();await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();toast('Pihak berhasil diverifikasi dengan bukti tercatat.','success');
+      }catch(error){toast('Verifikasi pihak gagal: '+error.message,'error');}
+    }
+
     async function loadLegacyLedgerMigrationStatus(){
       const host=document.getElementById('legacyLedgerMigrationSummary');if(!host)return;
       try{
-        const [all,journals,accounts,bkRows]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('chart_accounts'),getAllBkRekening()]);
+        const [all,journals,accounts,bkRows,partyRows]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('chart_accounts'),getAllBkRekening(),getAll('subledger_parties')]);
         const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row));
         const mapped=new Set(journals.filter(j=>j.source_type==='legacy_transaction').map(j=>String(j.source_id)));
         let ready=0,held=0;const reasons={};
-        legacy.forEach(r=>{if(mapped.has(String(r.id)))return;const p=buildLegacyTransactionJournalProposal(r,bkRows,accounts);if(p.status==='ready')ready++;else{held++;reasons[p.reason]=(reasons[p.reason]||0)+1;}});
+        legacy.forEach(r=>{if(mapped.has(String(r.id)))return;const p=buildLegacyTransactionJournalProposal(r,bkRows,accounts,partyRows);if(p.status==='ready')ready++;else{held++;reasons[p.reason]=(reasons[p.reason]||0)+1;}});
         const draft=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='draft').length;
         const posted=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='posted').length;
         host.innerHTML='<strong>Sumber historis:</strong> '+legacy.length+' · <strong>Sudah berjurnal:</strong> '+mapped.size+' · <strong>Siap draft:</strong> '+ready+' · <strong>Ditahan:</strong> '+held+'<div>Draft: '+draft+' · Posted: '+posted+' (tidak dibuat oleh fitur ini)</div>'+
@@ -7526,13 +7631,13 @@
       const host=document.getElementById('legacyLedgerMigrationSummary');if(host)host.textContent='Menyiapkan draft jurnal…';
       try{
         await ensureAccountingFoundation();
-        const [all,journals,history,bkRows,accounts]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('change_history'),getAllBkRekening(),getAll('chart_accounts')]);
+        const [all,journals,history,bkRows,accounts,partyRows]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('change_history'),getAllBkRekening(),getAll('chart_accounts'),getAll('subledger_parties')]);
         const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row));
         const existing=new Set(journals.filter(j=>j.source_type==='legacy_transaction').map(j=>String(j.source_id)));
         let created=0,already=0,held=0,failed=0;
         for(let i=0;i<legacy.length;i++){
           const row=legacy[i],id=String(row.id);if(existing.has(id)){already++;continue;}
-          const p=buildLegacyTransactionJournalProposal(row,bkRows,accounts);
+          const p=buildLegacyTransactionJournalProposal(row,bkRows,accounts,partyRows);
           if(p.status!=='ready'){
             held++;if(!history.some(h=>h.target_type==='legacy_transaction'&&String(h.target_id)===id&&h.action==='LEGACY_LEDGER_HELD'&&h.reason===p.reason))await put('change_history',{target_type:'legacy_transaction',target_id:id,changed_at:new Date().toISOString(),action:'LEGACY_LEDGER_HELD',reason:p.reason,source_key:p.source_key,reviewer:'system-rule'});
           }else{
@@ -7570,6 +7675,7 @@
         const body = document.getElementById('journalEntriesBody');
         if (body) body.innerHTML = entries.slice(0,30).map(entry => '<tr><td>' + accountingEscapeHtml(entry.tanggal) + '</td><td>' + accountingEscapeHtml(entry.description) + '<br><small>' + accountingEscapeHtml(entry.id) + '</small></td><td>' + accountingEscapeHtml(entry.status) + '</td><td class="text-right">' + formatRp(entry.debit_total) + '</td><td class="text-right">' + formatRp(entry.credit_total) + '</td><td>' + journalActionHtml(entry) + '</td></tr>').join('') || '<tr><td colspan="6" class="empty">Belum ada jurnal.</td></tr>';
         await loadLegacyLedgerMigrationStatus();
+        await loadLegacySubledgerPartyReview();
         await loadTrialBalanceView();
         if (glSelect && glSelect.value) await loadGeneralLedgerView();
       } catch (e) {

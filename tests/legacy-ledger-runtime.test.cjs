@@ -17,7 +17,7 @@ function extract(name,isAsync=false){
  throw new Error('unclosed function '+name);
 }
 function install(ctx,name,isAsync=false){const src=extract(name,isAsync).replace(new RegExp('^(async )?function '+name+'\\('),'$1function(');ctx[name]=vm.runInNewContext('('+src+')',ctx);}
-function open(name){return new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('transaksi',{keyPath:'id'});d.createObjectStore('transaksi_arsip',{keyPath:'id'});d.createObjectStore('chart_accounts',{keyPath:'code'});d.createObjectStore('bk_rekening',{keyPath:'id'});const je=d.createObjectStore('journal_entries',{keyPath:'id'});je.createIndex('source_key','source_key',{unique:true});d.createObjectStore('journal_lines',{keyPath:'id'});d.createObjectStore('change_history',{keyPath:'id',autoIncrement:true});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
+function open(name){return new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('transaksi',{keyPath:'id'});d.createObjectStore('transaksi_arsip',{keyPath:'id'});d.createObjectStore('chart_accounts',{keyPath:'code'});d.createObjectStore('bk_rekening',{keyPath:'id'});const je=d.createObjectStore('journal_entries',{keyPath:'id'});je.createIndex('source_key','source_key',{unique:true});d.createObjectStore('journal_lines',{keyPath:'id'});d.createObjectStore('change_history',{keyPath:'id',autoIncrement:true});d.createObjectStore('subledger_parties',{keyPath:'id'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
 function putRaw(db,store,value){return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
 function allRaw(db,store){return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
 async function run(){
@@ -38,7 +38,7 @@ async function run(){
   put:async(store,value)=>putRaw(ctx.db,store,value),getAllBkRekening:async()=>[bk],ensureAccountingFoundation:async()=>{},
   markDataChanged:()=>{changes++;},loadAccountingWorkbench:async()=>{},toast:(message,type)=>messages.push({message,type}),
   document:{getElementById:id=>id==='legacyLedgerMigrationSummary'?host:null},postJournalEntry:()=>{throw new Error('must never post');}};
- for(const [n,a] of [['accountingIsValidDate',false],['normNba',false],['parseBkKeterangan',false],['accountingValidateJournalLines',false],['getAccountingTransactions',true],['buildLegacyTransactionJournalProposal',false],['createJournalDraft',true],['prepareLegacyTransactionLedgerDrafts',true]])install(ctx,n,a);
+ for(const [n,a] of [['accountingIsValidDate',false],['normNba',false],['parseBkKeterangan',false],['normalizeLegacyPartyCode',false],['parseLegacyPartyAllocations',false],['accountingValidateJournalLines',false],['getAccountingTransactions',true],['buildLegacyTransactionJournalProposal',false],['createJournalDraft',true],['prepareLegacyTransactionLedgerDrafts',true]])install(ctx,n,a);
  const before=JSON.stringify(await allRaw(db,'transaksi'));
  await ctx.prepareLegacyTransactionLedgerDrafts();
  let journals=await allRaw(db,'journal_entries'),lines=await allRaw(db,'journal_lines'),history=await allRaw(db,'change_history');
