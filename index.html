@@ -5544,6 +5544,7 @@
             rowOccurrences.set(signature, occurrence);
             importedRow.id = makeImportRowId(signature, occurrence);
             importedRow.source_row = idx + 2;
+            importedRow.source_file_name = file.name || 'Workbook historis';
             importedRow.source_key = signature;
             importedRow._status = statusRow;
             importedRow._msg = msg;
@@ -5684,11 +5685,12 @@
                 duplicates++;
                 return;
               }
-              const clean = {...row, import_batch_id:id, import_source_row:row.source_row || null, status_data:'aktif'};
+              const clean = {...row, import_batch_id:id, import_source_row:row.source_row || null, status:row.transaction_status, status_data:'aktif'};
               delete clean._status;
               delete clean._msg;
               delete clean.batch_id;
               delete clean.review_status;
+              delete clean.transaction_status;
               delete clean.reviewed_at;
               delete clean.committed_at;
               tx.objectStore('transaksi').add(clean);
@@ -5757,7 +5759,7 @@
           tx = db.transaction('import_staging', 'readwrite');
           const store = tx.objectStore('import_staging');
           pending.forEach(row => {
-            const stagedRow = {...row,batch_id:batchId,status:'pending_review',review_status:row._status,source_row:row.source_row || null,staged_at:now};
+            const stagedRow = {...row,transaction_status:row.status,batch_id:batchId,status:'pending_review',review_status:row._status,source_row:row.source_row || null,staged_at:now};
             store.add(stagedRow);
           });
           tx.oncomplete = () => resolve(true);
