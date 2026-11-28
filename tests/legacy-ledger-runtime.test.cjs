@@ -42,7 +42,7 @@ async function run(){
  const before=JSON.stringify(await allRaw(db,'transaksi'));
  await ctx.prepareLegacyTransactionLedgerDrafts();
  let journals=await allRaw(db,'journal_entries'),lines=await allRaw(db,'journal_lines'),history=await allRaw(db,'change_history');
- assert.equal(journals.length,2);assert.ok(journals.every(j=>j.status==='draft'));assert.equal(lines.length,4);
+ console.log('DEBUG migration',messages,history);assert.equal(journals.length,2);assert.ok(journals.every(j=>j.status==='draft'));assert.equal(lines.length,4);
  assert.deepEqual(journals.map(j=>j.source_key).sort(),['LEGACY-TRX:BK-1','LEGACY-TRX:SALE-1']);
  assert.equal(history.filter(h=>h.action==='LEGACY_LEDGER_DRAFT_CREATED').length,2);
  assert.equal(history.filter(h=>h.action==='LEGACY_LEDGER_HELD').length,3);
