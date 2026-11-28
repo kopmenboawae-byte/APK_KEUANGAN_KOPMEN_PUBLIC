@@ -2341,6 +2341,10 @@
           <label>Saldo Awal (Rp)</label>
           <input type="text" id="bkRekAwal" class="form-control input-rp" inputmode="numeric" value="Rp 0" />
         </div>
+        <div class="grid-2">
+          <div class="form-group"><label>Tanggal efektif saldo awal</label><input type="date" id="bkRekEffectiveDate" class="form-control" /></div>
+          <div class="form-group"><label>Alasan perubahan saldo awal</label><textarea id="bkRekReason" class="form-control" rows="2" placeholder="Wajib jika saldo awal berubah"></textarea></div>
+        </div>
         <button type="submit" class="btn btn-primary btn-block">Simpan Rekening</button>
       </form>
     </div>
@@ -6401,6 +6405,8 @@
       } else {
         setRpValue('bkRekAwal', 0);
       }
+      const date = document.getElementById('bkRekEffectiveDate');
+      if (date) date.value = todayStr();
       initAllRpInputs(document.getElementById('bkRekModal'));
       document.getElementById('bkRekModal').classList.add('show');
     }
@@ -6416,24 +6422,58 @@
       const nama = document.getElementById('bkRekNama').value.trim();
       const saldo_awal = parseAngkaID(document.getElementById('bkRekAwal').value);
       const key = normNba(nba);
-      if (!key || !nama) { toast('NBA harus berisi angka dan Nama wajib diisi.', 'error'); return; }
+      if (!key || !nama || !Number.isSafeInteger(saldo_awal) || saldo_awal < 0) { toast('NBA, nama, dan saldo awal harus valid.', 'error'); return; }
       const existing = await getAllBkRekening();
       if (existing.some(r => r.id !== id && normNba(r.nba) === key)) {
         toast('NBA sudah terdaftar. Setiap rekening harus memiliki NBA unik.', 'error');
         document.getElementById('bkRekNba').focus();
         return;
       }
-      await put('bk_rekening', {
-        id, nba, nama, saldo_awal,
-        key,
-        updated_at: new Date().toISOString()
+      const previous = existing.find(r => r.id === id) || null;
+      const openingChanged = previous ? Number(previous.saldo_awal || 0) !== saldo_awal : saldo_awal !== 0;
+      let openingVersion = null;
+      if (openingChanged) {
+        const effectiveDate = (document.getElementById('bkRekEffectiveDate') || {}).value || '';
+        const reason = ((document.getElementById('bkRekReason') || {}).value || '').trim();
+        if (!accountingIsValidDate(effectiveDate) || !reason) {
+          toast('Perubahan saldo awal BK wajib memiliki tanggal efektif dan alasan.', 'error');
+          return;
+        }
+        const versions = await getAll('opening_balance_versions');
+        const previousVersion = versions.filter(v => v.status !== 'superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0] || null;
+        const nextAccounts = existing.filter(r => r.id !== id).concat([{id,nba,nama,saldo_awal,key}]);
+        const snapshot = list => list.map(r=>({id:r.id,nba:r.nba,nama:r.nama,saldo_awal:Number(r.saldo_awal||0)}));
+        openingVersion = {
+          id: accountingId('OPEN-BK'), effective_date: effectiveDate, reason,
+          status: 'legacy_unposted', source_type: 'bk_master',
+          previous_version_id: previousVersion ? previousVersion.id : null,
+          changed_fields: ['bk_rekening:' + id],
+          previous_balances: { bk_accounts: snapshot(existing) },
+          balances: { bk_accounts: snapshot(nextAccounts) },
+          created_at: new Date().toISOString(), created_by: 'local-user'
+        };
+      }
+      const record = { id, nba, nama, saldo_awal, key, updated_at: new Date().toISOString() };
+      await new Promise((resolve,reject)=>{
+        let tx;
+        try {
+          const stores=['bk_rekening'];
+          if(openingVersion)stores.push('opening_balance_versions');
+          if(openingVersion&&db.objectStoreNames.contains('audit_log'))stores.push('audit_log');
+          tx=db.transaction(stores,'readwrite');
+          tx.objectStore('bk_rekening').put(record);
+          if(openingVersion){
+            tx.objectStore('opening_balance_versions').put(openingVersion);
+            if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:openingVersion.created_at,aksi:'VERSI_SALDO_AWAL_BK',target_id:openingVersion.id,keterangan:openingVersion.reason});
+          }
+          tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Simpan rekening BK gagal'));tx.onabort=()=>reject(tx.error||new Error('Simpan rekening BK dibatalkan'));
+        }catch(err){if(tx){try{tx.abort();}catch(_){}}reject(err);}
       });
       markDataChanged();
       closeBkRekModal();
-      toast('Rekening BK disimpan', 'success');
-      loadBkMasterTable();
-      // sync total
-      await syncBkTotalToSettings();
+      toast(openingVersion ? 'Rekening BK disimpan dan versi saldo awal dicatat (belum dijurnal).' : 'Rekening BK disimpan', 'success');
+      await loadBkMasterTable();
+      if(openingVersion)await loadOpeningBalanceHistory();
     }
 
     async function editBkRekening(id) {
