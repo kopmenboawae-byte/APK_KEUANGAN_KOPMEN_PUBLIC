@@ -110,6 +110,10 @@
       margin: 0 auto;
     }
     .settings-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px}.settings-jump{min-height:42px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:600 .78rem var(--font);text-align:left;cursor:pointer}.settings-anchor{scroll-margin-top:84px}@media(min-width:700px){.settings-shortcuts{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media (max-width: 640px) {
+      .journal-line-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; }
+      .journal-line-row .journal-account, .journal-line-row .journal-memo { grid-column: 1 / -1; }
+    }
     .page { display: none; }
     .page.active { display: block; }
     .card {
@@ -2626,7 +2630,7 @@
       if(payload.source_key){const duplicate=await new Promise((resolve,reject)=>{const tx=db.transaction('journal_entries','readonly'),req=tx.objectStore('journal_entries').index('source_key').get(String(payload.source_key));req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});if(duplicate)return{id:duplicate.id,duplicate:true,status:duplicate.status};}
       const checked=accountingValidateJournalLines(payload.lines,await getAll('chart_accounts')),id=accountingId('JRN'),now=new Date().toISOString();
       const header={id,tanggal:date,description:String(payload.description).trim(),status:'draft',source_type:payload.source_type||'manual',source_id:payload.source_id||null,source_key:payload.source_key||undefined,debit_total:checked.debit_total,credit_total:checked.credit_total,reversal_of:payload.reversal_of||null,created_at:now,created_by:payload.created_by||'local-user',notes:String(payload.notes||'').trim()};
-      const lines=checked.lines.map(line=>({...line,journal_id:id,tanggal:date,status:'draft'}));
+      const lines=checked.lines.map(line=>({...line,journal_id:id,tanggal:date,status:'draft',description:header.description}));
       await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(['journal_entries','journal_lines'],'readwrite');tx.objectStore('journal_entries').add(header);lines.forEach(line=>tx.objectStore('journal_lines').add(line));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Penyimpanan draft jurnal gagal'));tx.onabort=()=>reject(tx.error||new Error('Penyimpanan draft jurnal dibatalkan'));}catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}});
       return{id,duplicate:false,status:'draft',debit_total:checked.debit_total,credit_total:checked.credit_total};
     }
@@ -2749,47 +2753,56 @@
       const original=await getJournalEntryDetails(id);if(!original||original.status!=='posted')throw new Error('Hanya jurnal posted yang dapat dibalik.');const note=String(reason||'').trim();if(!note)throw new Error('Alasan pembalikan wajib diisi.');
       const draft=await createJournalDraft({tanggal:todayStr(),description:'Pembalikan jurnal '+id,source_type:'reversal',source_id:id,source_key:'REVERSAL:'+id,reversal_of:id,notes:note,lines:original.lines.map(line=>({account_code:line.account_code,debit:line.credit,credit:line.debit,party_id:line.party_id,bk_rekening_id:line.bk_rekening_id,payment_account_id:line.payment_account_id,memo:'Pembalikan: '+(line.memo||'')}))});if(draft.duplicate)return draft;return await postJournalEntry(draft.id);
     }
-    async function getGeneralLedgerRows(accountCode,from,to) {
+    async function getGeneralLedgerRows(accountCode,from,to,limit) {
       const code=String(accountCode||'').trim(), accounts=await getAll('chart_accounts'), account=accounts.find(a=>String(a.code)===code);
       if(!account)throw new Error('Akun Buku Besar tidak ditemukan: '+code);
       if(from&&!accountingIsValidDate(from))throw new Error('Tanggal awal Buku Besar tidak valid.');
       if(to&&!accountingIsValidDate(to))throw new Error('Tanggal akhir Buku Besar tidak valid.');
       if(from&&to&&from>to)throw new Error('Rentang tanggal Buku Besar tidak valid.');
-      const lower=[code,'0000-01-01'],upper=[code,to||'9999-12-31'];
-      const lines=await new Promise((resolve,reject)=>{
-        const tx=db.transaction('journal_lines','readonly'),range=IDBKeyRange.bound(lower,upper),req=tx.objectStore('journal_lines').index('account_date').getAll(range);
-        req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);
+      const maxRows=Math.max(1,Math.min(2000,Number(limit)||500)), lower=[code,'0000-01-01'], upper=[code,to||'9999-12-31'];
+      let balance=0,opening=0,omitted=0;const rows=[];
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction('journal_lines','readonly'),range=IDBKeyRange.bound(lower,upper),req=tx.objectStore('journal_lines').index('account_date').openCursor(range);
+        req.onsuccess=()=>{
+          const cursor=req.result;if(!cursor){resolve(true);return;}
+          const line=cursor.value;
+          if(line.status==='posted'){
+            balance+=account.normal_balance==='credit'?(line.credit-line.debit):(line.debit-line.credit);
+            if(from&&line.tanggal<from)opening=balance;
+            else {rows.push({...line,running_balance:balance});if(rows.length>maxRows){rows.shift();omitted++;}}
+          }
+          cursor.continue();
+        };
+        req.onerror=()=>reject(req.error||new Error('Pembacaan Buku Besar gagal'));
+        tx.onerror=()=>reject(tx.error||new Error('Query Buku Besar gagal'));
       });
-      let balance=0,opening=0;const rows=[];
-      lines.forEach(line=>{
-        if(line.status!=='posted')return;
-        const delta=account.normal_balance==='credit'?(line.credit-line.debit):(line.debit-line.credit);
-        balance+=delta;
-        if(from&&line.tanggal<from){opening=balance;return;}
-        rows.push({...line,running_balance:balance});
-      });
-      return{account,opening_balance:opening,rows,closing_balance:balance};
+      return{account,opening_balance:opening,rows,closing_balance:balance,omitted_count:omitted};
     }
 
     async function getTrialBalance(asOfDate) {
       const cutoff=asOfDate||'9999-12-31';
       if(!accountingIsValidDate(cutoff))throw new Error('Tanggal neraca saldo tidak valid.');
-      const lines=await new Promise((resolve,reject)=>{
-        const tx=db.transaction('journal_lines','readonly'),req=tx.objectStore('journal_lines').index('tanggal').getAll(IDBKeyRange.upperBound(cutoff));
-        req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);
-      });
       const totals=new Map();
-      lines.forEach(line=>{
-        if(line.status!=='posted')return;
-        const item=totals.get(line.account_code)||{debit:0,credit:0};
-        item.debit+=line.debit||0;item.credit+=line.credit||0;totals.set(line.account_code,item);
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction('journal_lines','readonly'),req=tx.objectStore('journal_lines').index('tanggal').openCursor(IDBKeyRange.upperBound(cutoff));
+        req.onsuccess=()=>{
+          const cursor=req.result;if(!cursor){resolve(true);return;}
+          const line=cursor.value;
+          if(line.status==='posted'){
+            const item=totals.get(line.account_code)||{debit:0,credit:0};
+            item.debit+=line.debit||0;item.credit+=line.credit||0;totals.set(line.account_code,item);
+          }
+          cursor.continue();
+        };
+        req.onerror=()=>reject(req.error||new Error('Pembacaan Neraca Saldo gagal'));
+        tx.onerror=()=>reject(tx.error||new Error('Query Neraca Saldo gagal'));
       });
       const accounts=await getAll('chart_accounts');
       const rows=accounts.map(account=>{
         const total=totals.get(account.code)||{debit:0,credit:0};
         const net=account.normal_balance==='credit'?total.credit-total.debit:total.debit-total.credit;
         return{account_code:account.code,account_name:account.name,total_debit:total.debit,total_credit:total.credit,
-          debit_balance:Math.max(0,-(account.normal_balance==='credit'?net:-net)),
+          debit_balance:Math.max(0,account.normal_balance==='credit'?-net:net),
           credit_balance:Math.max(0,account.normal_balance==='credit'?net:-net)};
       }).filter(row=>row.total_debit||row.total_credit);
       return{as_of:cutoff,rows,total_debit:rows.reduce((n,r)=>n+r.debit_balance,0),total_credit:rows.reduce((n,r)=>n+r.credit_balance,0)};
@@ -6848,8 +6861,8 @@
       if (!code) { if(body)body.innerHTML='<tr><td colspan="5" class="empty">Pilih akun untuk melihat Buku Besar.</td></tr>'; if(summary)summary.textContent=''; return; }
       try {
         const result = await getGeneralLedgerRows(code,from,to);
-        if (body) body.innerHTML = result.rows.map(line => '<tr><td>' + accountingEscapeHtml(line.tanggal) + '</td><td>' + accountingEscapeHtml(line.memo || line.journal_id) + '</td><td class="text-right">' + formatRp(line.debit) + '</td><td class="text-right">' + formatRp(line.credit) + '</td><td class="text-right">' + formatRp(line.running_balance) + '</td></tr>').join('') || '<tr><td colspan="5" class="empty">Tidak ada mutasi posted pada rentang ini.</td></tr>';
-        if (summary) summary.textContent = result.account.code + ' — ' + result.account.name + ' · Saldo awal ' + formatRp(result.opening_balance) + ' · Saldo akhir ' + formatRp(result.closing_balance);
+        if (body) body.innerHTML = result.rows.map(line => '<tr><td>' + accountingEscapeHtml(line.tanggal) + '</td><td>' + accountingEscapeHtml(line.description || line.memo || line.journal_id) + '</td><td class="text-right">' + formatRp(line.debit) + '</td><td class="text-right">' + formatRp(line.credit) + '</td><td class="text-right">' + formatRp(line.running_balance) + '</td></tr>').join('') || '<tr><td colspan="5" class="empty">Tidak ada mutasi posted pada rentang ini.</td></tr>';
+        if (summary) summary.textContent = result.account.code + ' — ' + result.account.name + ' · Saldo awal ' + formatRp(result.opening_balance) + ' · Saldo akhir ' + formatRp(result.closing_balance) + (result.omitted_count ? ' · Menampilkan ' + result.rows.length + ' mutasi terakhir; ' + result.omitted_count + ' mutasi lebih lama diringkas' : '');
       } catch(e) { if(summary)summary.textContent=e.message; }
     }
 
