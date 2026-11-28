@@ -46,6 +46,9 @@ assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should ag
 assert.ok(html.includes('id="accountingWorkbench"'), 'Journal workbench must remain under Transactions');
 assert.ok(html.includes('id="bkMasterTable"'), 'BK administration table must exist');
 assert.ok(html.includes('id="settings-stok"'), 'Stocktake administration must exist');
+assert.ok(html.includes('id="tutupJurnalSection"'), 'Daily journal close must be under Transactions');
+assert.ok(!html.includes('id="page-tutupjurnal"'), 'Daily close must not remain a separate operational page');
+assert.ok(html.includes('SIMPAN_TUTUP_JURNAL'), 'Daily close must be audited');
 assert.ok(html.includes("status: 'legacy_unposted'"), 'Opening balance snapshots must remain unposted');
 assert.ok(html.includes('VERSI_SALDO_AWAL_BK'), 'BK opening changes must be audited');
 assert.ok(!html.includes('id="setSaldoBkDetail"'), 'Duplicate BK opening input in Settings must stay removed');
