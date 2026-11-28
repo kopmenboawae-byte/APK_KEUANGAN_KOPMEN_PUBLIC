@@ -7258,8 +7258,8 @@
 
     function journalActionHtml(entry) {
       const id=accountingEscapeHtml(entry.id);
-      if(entry.status==='draft')return '<button class="btn btn-primary btn-sm" onclick="postManualJournal(\\''+id+'\\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\\''+id+'\\')">Batal</button>';
-      if(entry.status==='posted')return '<button class="btn btn-outline btn-sm" onclick="reverseManualJournal(\\''+id+'\\')">Balik</button>';
+      if(entry.status==='draft')return '<button class="btn btn-primary btn-sm" onclick="postManualJournal(\''+id+'\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\''+id+'\')">Batal</button>';
+      if(entry.status==='posted')return '<button class="btn btn-outline btn-sm" onclick="reverseManualJournal(\''+id+'\')">Balik</button>';
       return '—';
     }
 
