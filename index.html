@@ -3136,15 +3136,8 @@
       settings.saldoAwalPenerimaanYMH = parseAngkaID((document.getElementById('setSaldoPenerimaanYMH')||{}).value);
       settings.saldoAwalInventaris = parseAngkaID((document.getElementById('setSaldoInventaris')||{}).value);
       settings.saldoAwalPenyusutanInventaris = parseAngkaID((document.getElementById('setSaldoPenyusutanInventaris')||{}).value);
-      settings.saldoBkDetail = (document.getElementById('setSaldoBkDetail') || {}).value || '';
-      // hitung total BK dari detail
-      let totalBk = 0;
-      settings.saldoBkDetail.split('\n').forEach(line => {
-        const p = line.trim().split('|');
-        if (p.length >= 3) totalBk += parseAngkaID(p[2]);
-      });
-      settings.saldoAwalBonKas = totalBk;
-      setRpValue('setSaldoBonKas', totalBk);
+      const totalBkMaster = await syncBkTotalToSettings();
+      setRpValue('setSaldoBonKas', totalBkMaster || settings.saldoAwalBonKas || 0);
       settings.saldoAwalPinjamanKSP = parseAngkaID((document.getElementById('setSaldoPinjamanKSP')||{}).value);
       settings.saldoAwalTitipan = parseAngkaID((document.getElementById('setSaldoTitipan')||{}).value);
       settings.saldoAwalSimpananPokok = parseAngkaID((document.getElementById('setSaldoSimpananPokok')||{}).value);
@@ -3159,7 +3152,7 @@
       settings.id = 'app';
       const openingKeys = [
         'saldoAwalKas','saldoAwalSibuhar','saldoAwalPersediaan','saldoAwalPiutang','saldoAwalPenerimaanYMH',
-        'saldoAwalInventaris','saldoAwalPenyusutanInventaris','saldoBkDetail','saldoAwalBonKas','saldoAwalPinjamanKSP',
+        'saldoAwalInventaris','saldoAwalPenyusutanInventaris','saldoAwalPinjamanKSP',
         'saldoAwalTitipan','saldoAwalSimpananPokok','saldoAwalSimpananWajib','saldoAwalHutangBarang','saldoAwalCadangan',
         'saldoAwalDanaPKKSP','saldoAwalModalPenyertaKB','saldoAwalDonasiKB','saldoAwalSHU','saldoAwalModal'
       ];
@@ -3346,8 +3339,7 @@
         setSaldoModal: settings.saldoAwalModal
       };
       Object.keys(rpIds).forEach(id => setRpValue(id, rpIds[id] || 0));
-      const bkDetail = document.getElementById('setSaldoBkDetail');
-      if (bkDetail) bkDetail.value = settings.saldoBkDetail || '';
+      syncBkTotalToSettings().then(total => setRpValue('setSaldoBonKas', total || settings.saldoAwalBonKas || 0)).catch(() => {});
       const effectiveDate = document.getElementById('openingBalanceEffectiveDate');
       if (effectiveDate && !effectiveDate.value) effectiveDate.value = todayStr();
       const reason = document.getElementById('openingBalanceChangeReason');
