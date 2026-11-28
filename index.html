@@ -3096,12 +3096,12 @@
       };
       const total = Object.values(pd).reduce((a,b) => a + b, 0);
       settings.piutangDetail = pd;
-      settings.saldoAwalPiutang = total;
+      // Rincian ini hanya breakdown referensi; tidak boleh mengubah saldo awal piutang.
       settings.id = 'app';
       await put('settings', settings);
       markDataChanged();
       updatePdTotalDisplay();
-      toast('Rincian piutang disimpan. Total: ' + formatRp(total), 'success');
+      toast('Rincian piutang referensi disimpan (' + formatRp(total) + '). Saldo awal tidak diubah.', 'success');
     }
 
     // ===================== SETTINGS =====================
