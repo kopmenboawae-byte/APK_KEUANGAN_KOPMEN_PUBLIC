@@ -1,0 +1,25 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const html=fs.readFileSync('index.html','utf8');
+function body(name,isAsync=false){const marker=(isAsync?'async function ':'function ')+name+'(';const i=html.indexOf(marker);assert.ok(i>=0,'missing '+name);const j=html.indexOf('\n    }',i);assert.ok(j>i,'cannot locate end '+name);return html.slice(i,j+6);}
+const load=body('loadLegacySourceIntoManualJournal',true);
+const save=body('saveManualJournalDraft',true);
+const collect=body('collectJournalEditorLines');
+const party=body('toggleJournalPartyHolder');
+const status=body('loadLegacyLedgerMigrationStatus',true);
+const verify=body('verifyLegacySubledgerParty',true);
+assert.ok(load.includes("source_type")||html.includes("manualJournalSourceType"),'legacy source type hidden field missing');
+for(const field of ["manualJournalSourceType","manualJournalSourceId","manualJournalSourceKey","manualJournalSourceNotes"])assert.ok(load.includes(field),'source linkage not populated: '+field);
+assert.ok(load.includes("manualJournalSourceEvidence")&&load.includes("manualJournalSourcePreview"),'source evidence/preview not loaded');
+assert.ok(save.includes("source_type:sourceType")&&save.includes("source_id:sourceId")&&save.includes("source_key:sourceKey"),'manual draft must retain source linkage');
+assert.ok(save.includes("Bukti/rujukan pemetaan sumber wajib diisi")||save.includes("!evidence"),'manual legacy draft must require evidence');
+assert.ok(save.includes("_subledgerPartyAccounts.some"),'receivable/payable must use verified parties');
+assert.ok(!save.includes("postJournalEntry"),'manual resolver must not post');
+assert.ok(collect.includes("party_id:"),'journal editor must collect party_id');
+assert.ok(party.includes("['1104','2101'].includes")&&party.includes("holder.required=required"),'party selection must be mandatory for receivable/payable');
+assert.ok(status.includes("legacyMigrationSourceSelect")&&status.includes("loadLegacySourceIntoManualJournal"),'held source selector must be visible');
+assert.ok(verify.includes("verification_note")&&verify.includes("change_history"),'party verification must retain evidence/audit');
+assert.ok(html.includes("id=\"manualJournalSourceEvidence\""),'evidence input missing');
+assert.ok(html.includes("Pilih anggota/pemasok verified"),'party dropdown must be restricted to verified party list');
+assert.ok(html.includes("_subledgerPartyAccounts = (await getAll('subledger_parties')).filter(p=>p.verification_status==='verified')"),'verified parties must be loaded from master');
+console.log('Legacy manual exception mapping tests: source linkage, evidence, party control and draft-only safeguards passed.');

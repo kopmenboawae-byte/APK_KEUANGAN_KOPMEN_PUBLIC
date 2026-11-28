@@ -1651,6 +1651,7 @@
           <div id="legacySubledgerPartyReview" style="margin-top:10px;font-size:.78rem;color:var(--muted);">Kandidat subledger belum dimuat.</div>
         </div>
         <form id="manualJournalForm" onsubmit="saveManualJournalDraft(event)">
+          <input type="hidden" id="manualJournalSourceType"><input type="hidden" id="manualJournalSourceId"><input type="hidden" id="manualJournalSourceKey"><input type="hidden" id="manualJournalSourceNotes"><div id="manualJournalSourcePreview" style="display:none;margin:8px 0;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:.78rem;white-space:pre-wrap;"></div>
           <div class="grid-2">
             <div class="form-group"><label>Tanggal jurnal *</label><input type="date" id="manualJournalDate" class="form-control" required /></div>
             <div class="form-group"><label>Uraian jurnal *</label><input type="text" id="manualJournalDescription" class="form-control" maxlength="180" required placeholder="Contoh: Penyesuaian administrasi bank" /></div>
@@ -1658,6 +1659,7 @@
           <div class="card-title">Baris debit dan kredit</div>
           <div id="journalLinesEditor"></div>
           <div class="form-group" style="margin-top:10px;"><label>Alasan jurnal pembukaan (isi hanya jika membuat saldo awal)</label><textarea id="openingJournalReason" class="form-control" rows="2" maxlength="240" placeholder="Dasar rekonsiliasi dan dokumen pendukung"></textarea></div>
+          <div class="form-group" style="margin-top:8px;"><label>Bukti/rujukan pemetaan transaksi sumber (wajib untuk migrasi manual)</label><textarea id="manualJournalSourceEvidence" class="form-control" rows="2" maxlength="500" placeholder="Nomor faktur, bukti pembayaran, kartu anggota, dokumen pemasok, atau alasan klasifikasi"></textarea></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px;">
             <button type="button" class="btn btn-outline btn-sm" onclick="addManualJournalLine()">＋ Tambah Baris</button>
             <button type="submit" class="btn btn-primary btn-sm">Simpan Draft Jurnal Manual</button>
@@ -7320,6 +7322,7 @@
     // ===================== JURNAL & BUKU BESAR (MENU TRANSAKSI) =====================
     let _accountingAccounts = [];
     let _bkRekeningAccounts = [];
+    let _subledgerPartyAccounts = [];
     function accountingEscapeHtml(value) {
       return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     }
@@ -7331,6 +7334,22 @@
         accountingEscapeHtml(a.code + ' — ' + a.name + (a.classification_status === 'needs_review' ? ' (perlu verifikasi)' : '')) +
         '</option>'
       ).join('');
+    }
+function journalPartyOptions(selected) {
+      return '<option value="">Pilih anggota/pemasok verified</option>' + _subledgerPartyAccounts.map(p =>
+        '<option value="' + accountingEscapeHtml(p.id) + '"' + (String(p.id)===String(selected||'')?' selected':'') + '>' +
+        accountingEscapeHtml((p.type==='member'?'Anggota ':'Pemasok ')+(p.display_code||p.code)+' — '+p.name) + '</option>'
+      ).join('');
+    }
+    function refreshJournalPartyOptions() {
+      document.querySelectorAll('#journalLinesEditor .journal-party-holder').forEach(select=>{const selected=select.value;select.innerHTML=journalPartyOptions(selected);});
+    }
+    function toggleJournalPartyHolder(accountSelect) {
+      const row=accountSelect.closest('.journal-line-row'),holder=row&&row.querySelector('.journal-party-holder');
+      if(!holder)return;
+      const required=['1104','2101'].includes(accountSelect.value);
+      holder.style.display=required?'block':'none';holder.required=required;
+      if(!required)holder.value='';
     }
     function journalBkHolderOptions(selected) {
       return '<option value="">Pilih pemegang BK</option>' + _bkRekeningAccounts.map(r =>
@@ -7353,17 +7372,20 @@
       const container = document.getElementById('journalLinesEditor');
       if (!container) return;
       const line = data || {};
+      container.style.overflowX='auto';
       const row = document.createElement('div');
       row.className = 'journal-line-row';
-      row.style.cssText = 'display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(90px,1fr)) minmax(120px,1.2fr) minmax(150px,1.3fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
-      row.innerHTML = '<select class="form-control journal-account" aria-label="Akun jurnal" onchange="toggleJournalBkHolder(this)">' + accountingAccountOptions(line.account_code || '') + '</select>' +
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.4fr) repeat(2,minmax(70px,.8fr)) minmax(90px,1fr) minmax(110px,1fr) minmax(120px,1.1fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
+      row.innerHTML = '<select class="form-control journal-account" aria-label="Akun jurnal" onchange="toggleJournalBkHolder(this);toggleJournalPartyHolder(this)">' + accountingAccountOptions(line.account_code || '') + '</select>' +
         '<input class="form-control journal-debit" type="number" min="0" step="1" inputmode="numeric" placeholder="Debit" value="' + Number(line.debit || 0) + '" />' +
         '<input class="form-control journal-credit" type="number" min="0" step="1" inputmode="numeric" placeholder="Kredit" value="' + Number(line.credit || 0) + '" />' +
         '<input class="form-control journal-memo" type="text" maxlength="120" placeholder="Catatan baris" value="' + accountingEscapeHtml(line.memo || '') + '" />' +
         '<select class="form-control journal-bk-holder" aria-label="Pemegang BK" style="display:none;">' + journalBkHolderOptions(line.bk_rekening_id || '') + '</select>' +
+        '<select class="form-control journal-party-holder" aria-label="Pihak subledger" style="display:none;">' + journalPartyOptions(line.party_id || '') + '</select>' +
         '<button type="button" class="btn btn-outline btn-sm" aria-label="Hapus baris" onclick="this.closest(\'.journal-line-row\').remove()">×</button>';
       container.appendChild(row);
       toggleJournalBkHolder(row.querySelector('.journal-account'));
+      toggleJournalPartyHolder(row.querySelector('.journal-account'));
     }
 
     function resetManualJournalForm() {
@@ -7373,6 +7395,9 @@
       const date = document.getElementById('manualJournalDate');
       if (date) date.value = todayStr();
       if (container) container.innerHTML = '';
+      ['manualJournalSourceType','manualJournalSourceId','manualJournalSourceKey','manualJournalSourceNotes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      const evidence=document.getElementById('manualJournalSourceEvidence');if(evidence){evidence.value='';evidence.required=false;}
+      const preview=document.getElementById('manualJournalSourcePreview');if(preview){preview.textContent='';preview.style.display='none';}
       addManualJournalLine();
       addManualJournalLine();
     }
@@ -7383,6 +7408,7 @@
         debit: Number(row.querySelector('.journal-debit').value || 0),
         credit: Number(row.querySelector('.journal-credit').value || 0),
         bk_rekening_id: row.querySelector('.journal-bk-holder').value || null,
+        party_id: row.querySelector('.journal-party-holder').value || null,
         memo: row.querySelector('.journal-memo').value || ''
       }));
     }
@@ -7401,24 +7427,51 @@
       } catch(e) { toast('Draft jurnal pembukaan ditolak: '+e.message, 'error'); }
     }
 
+async function loadLegacySourceIntoManualJournal(){
+      try{
+        const select=document.getElementById('legacyMigrationSourceSelect'),id=select&&select.value;if(!id)throw new Error('Pilih transaksi sumber yang akan dipetakan.');
+        const row=(await getAccountingTransactions()).find(r=>String(r.id)===String(id));if(!row)throw new Error('Transaksi sumber tidak ditemukan.');
+        const [bkRows,accounts,partyRows]=await Promise.all([getAllBkRekening(),getAll('chart_accounts'),getAll('subledger_parties')]);
+        const proposal=buildLegacyTransactionJournalProposal(row,bkRows,accounts,partyRows);
+        const sourceKey='LEGACY-TRX:'+String(row.id),existing=(await getAll('journal_entries')).find(j=>j.source_key===sourceKey);
+        if(existing)throw new Error('Transaksi ini sudah memiliki jurnal '+existing.id+' dengan status '+existing.status+'.');
+        document.getElementById('manualJournalDate').value=row.tanggal||todayStr();
+        document.getElementById('manualJournalDescription').value='Pemetaan manual '+(row.jenis||'transaksi')+' · '+row.id;
+        document.getElementById('manualJournalSourceType').value='legacy_transaction';
+        document.getElementById('manualJournalSourceId').value=String(row.id);
+        document.getElementById('manualJournalSourceKey').value=sourceKey;
+        document.getElementById('manualJournalSourceNotes').value='Sumber transaksi '+row.id+'; jenis '+row.jenis+'; status '+row.status+'; nilai '+row.nilai+'; lokasi '+(row.lokasi||'—')+'; keterangan asli: '+(row.keterangan||'—');
+        const evidence=document.getElementById('manualJournalSourceEvidence');evidence.value='';evidence.required=true;
+        const preview=document.getElementById('manualJournalSourcePreview');preview.style.display='block';preview.textContent='ID: '+row.id+'\nTanggal: '+row.tanggal+'\nJenis/Status: '+row.jenis+' / '+row.status+'\nNilai: '+formatRp(row.nilai||0)+'\nLokasi: '+(row.lokasi||'—')+'\nAlasan hold otomatis: '+(proposal.reason||'Perlu pemetaan manual')+'\nKeterangan sumber: '+(row.keterangan||'—');
+        const editor=document.getElementById('journalLinesEditor');editor.innerHTML='';addManualJournalLine();addManualJournalLine();
+        const message=document.getElementById('journalWorkbenchMessage');if(message)message.textContent='Sumber '+row.id+' dimuat. Lengkapi semua baris debit/kredit, pihak subledger jika akun 1104/2101, dan bukti pemetaan. Draft belum diposting.';
+        document.getElementById('manualJournalForm').scrollIntoView({behavior:'smooth',block:'start'});
+      }catch(error){toast('Tidak dapat memuat sumber: '+error.message,'error');}
+    }
+
     async function saveManualJournalDraft(event) {
       event.preventDefault();
-      const lines = collectJournalEditorLines();
+      const lines=collectJournalEditorLines();
+      const sourceType=(document.getElementById('manualJournalSourceType')||{}).value||'manual_adjustment';
+      const sourceId=(document.getElementById('manualJournalSourceId')||{}).value||'';
+      const sourceKey=(document.getElementById('manualJournalSourceKey')||{}).value||'';
+      const sourceNotes=(document.getElementById('manualJournalSourceNotes')||{}).value||'';
+      const evidence=((document.getElementById('manualJournalSourceEvidence')||{}).value||'').trim();
       try {
-        const result = await createJournalDraft({
-          tanggal: document.getElementById('manualJournalDate').value,
-          description: document.getElementById('manualJournalDescription').value,
-          source_type: 'manual_adjustment',
-          lines
+        if(sourceType==='legacy_transaction'&&!evidence)throw new Error('Bukti/rujukan pemetaan sumber wajib diisi.');
+        for(const line of lines)if(['1104','2101'].includes(line.account_code)&&(!_subledgerPartyAccounts.some(p=>String(p.id)===String(line.party_id))))throw new Error('Setiap baris Piutang Anggota/Hutang Pemasok wajib memiliki pihak subledger yang verified.');
+        const result=await createJournalDraft({
+          tanggal:document.getElementById('manualJournalDate').value,
+          description:document.getElementById('manualJournalDescription').value,
+          source_type:sourceType,source_id:sourceId||null,source_key:sourceKey||undefined,
+          notes:sourceType==='legacy_transaction'?(sourceNotes+'\nBukti mapping: '+evidence):'',lines
         });
-        const message = document.getElementById('journalWorkbenchMessage');
-        if (message) message.textContent = result.duplicate ? 'Draft dengan sumber yang sama sudah ada.' : 'Draft jurnal ' + result.id + ' tersimpan. Debit dan kredit seimbang; belum masuk laporan.';
-        resetManualJournalForm();
-        await loadAccountingWorkbench();
-        toast('Draft jurnal berhasil disimpan', 'success');
-      } catch (e) {
-        toast('Draft jurnal ditolak: ' + e.message, 'error');
-      }
+        if(!result.duplicate&&sourceType==='legacy_transaction')await put('change_history',{target_type:'legacy_transaction',target_id:sourceId,changed_at:new Date().toISOString(),action:'LEGACY_LEDGER_MANUAL_DRAFT',source_key:sourceKey,journal_id:result.id,evidence,reviewer:'local-user',posting_status:'draft'});
+        const message=document.getElementById('journalWorkbenchMessage');
+        if(message)message.textContent=result.duplicate?'Draft untuk transaksi sumber ini sudah ada.':'Draft jurnal '+result.id+' tersimpan dan tertaut ke sumber. Belum diposting.';
+        resetManualJournalForm();await loadAccountingWorkbench();
+        toast(result.duplicate?'Draft sumber sudah ada':'Draft jurnal berhasil disimpan; belum diposting.','success');
+      }catch(e){toast('Draft jurnal ditolak: '+e.message,'error');}
     }
     async function reverseManualJournal(id) {
       const reason=prompt('Alasan membalik jurnal posted:');
@@ -7607,7 +7660,7 @@
         const party=(await getAll('subledger_parties')).find(p=>String(p.id)===String(partyId));if(!party)throw new Error('Kandidat pihak tidak ditemukan.');
         const now=new Date().toISOString(),updated={...party,name,verification_status:'verified',verified_at:now,verified_by:'local-user',verification_note:evidence};
         await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(['subledger_parties','change_history'],'readwrite');tx.objectStore('subledger_parties').put(updated);tx.objectStore('change_history').add({target_type:'subledger_party',target_id:String(partyId),changed_at:now,action:'VERIFY_SUBLEDGER_PARTY',before:{name:party.name,verification_status:party.verification_status},after:{name,verification_status:'verified'},evidence,reviewer:'local-user'});tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Verifikasi pihak gagal'));tx.onabort=()=>reject(tx.error||new Error('Verifikasi pihak dibatalkan'));}catch(error){reject(error);}});
-        markDataChanged();await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();toast('Pihak berhasil diverifikasi dengan bukti tercatat.','success');
+        _subledgerPartyAccounts=(await getAll('subledger_parties')).filter(p=>p.verification_status==='verified');refreshJournalPartyOptions();markDataChanged();await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();toast('Pihak berhasil diverifikasi dengan bukti tercatat.','success');
       }catch(error){toast('Verifikasi pihak gagal: '+error.message,'error');}
     }
 
@@ -7617,12 +7670,13 @@
         const [all,journals,accounts,bkRows,partyRows]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('chart_accounts'),getAllBkRekening(),getAll('subledger_parties')]);
         const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row));
         const mapped=new Set(journals.filter(j=>j.source_type==='legacy_transaction').map(j=>String(j.source_id)));
-        let ready=0,held=0;const reasons={};
-        legacy.forEach(r=>{if(mapped.has(String(r.id)))return;const p=buildLegacyTransactionJournalProposal(r,bkRows,accounts,partyRows);if(p.status==='ready')ready++;else{held++;reasons[p.reason]=(reasons[p.reason]||0)+1;}});
+        let ready=0,held=0;const reasons={},heldRows=[];
+        legacy.forEach(r=>{if(mapped.has(String(r.id)))return;const p=buildLegacyTransactionJournalProposal(r,bkRows,accounts,partyRows);if(p.status==='ready')ready++;else{held++;reasons[p.reason]=(reasons[p.reason]||0)+1;heldRows.push({row:r,reason:p.reason});}});
         const draft=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='draft').length;
         const posted=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='posted').length;
-        host.innerHTML='<strong>Sumber historis:</strong> '+legacy.length+' · <strong>Sudah berjurnal:</strong> '+mapped.size+' · <strong>Siap draft:</strong> '+ready+' · <strong>Ditahan:</strong> '+held+'<div>Draft: '+draft+' · Posted: '+posted+' (tidak dibuat oleh fitur ini)</div>'+
-          (held?'<details><summary>Lihat alasan penahanan</summary><ul>'+Object.entries(reasons).map(([k,v])=>'<li>'+accountingEscapeHtml(k)+' — '+v+'</li>').join('')+'</ul></details>':'');
+        const options=heldRows.map(item=>'<option value="'+accountingEscapeHtml(item.row.id)+'">'+accountingEscapeHtml((item.row.tanggal||'')+' · '+(item.row.jenis||'')+' · '+formatRp(item.row.nilai||0)+' · '+item.row.id+' · '+item.reason)+'</option>').join('');
+        host.innerHTML='<strong>Sumber historis:</strong> '+legacy.length+' · <strong>Sudah berjurnal:</strong> '+mapped.size+' · <strong>Siap draft otomatis:</strong> '+ready+' · <strong>Ditahan:</strong> '+held+'<div>Draft: '+draft+' · Posted: '+posted+' (tidak dibuat oleh fitur ini)</div>'+
+          (held?'<details><summary>Lihat alasan penahanan</summary><ul>'+Object.entries(reasons).map(([k,v])=>'<li>'+accountingEscapeHtml(k)+' — '+v+'</li>').join('')+'</ul></details><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"><select id="legacyMigrationSourceSelect" class="form-control" style="min-width:220px;flex:1;">'+options+'</select><button type="button" class="btn btn-outline btn-sm" onclick="loadLegacySourceIntoManualJournal()">Muat ke form jurnal manual</button></div>':'');
       }catch(e){host.textContent='Gagal memuat status migrasi: '+e.message;}
     }
 
@@ -7659,6 +7713,7 @@
       try {
         _accountingAccounts = await getAll('chart_accounts');
         _bkRekeningAccounts = await getAllBkRekening();
+        _subledgerPartyAccounts = (await getAll('subledger_parties')).filter(p=>p.verification_status==='verified');
         const glSelect = document.getElementById('glAccountSelect');
         if (glSelect) {
           const selected = glSelect.value;
@@ -7668,6 +7723,7 @@
           if (selected) glSelect.value = selected;
         }
         refreshJournalBkHolderOptions();
+        refreshJournalPartyOptions();
         const lineHost = document.getElementById('journalLinesEditor');
         if (lineHost && !lineHost.children.length) { addManualJournalLine(); addManualJournalLine(); }
         const entries = await getAll('journal_entries');

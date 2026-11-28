@@ -77,3 +77,6 @@ jobs:
 
       - name: Test verified party to journal migration
         run: node tests/legacy-party-draft-runtime.test.cjs
+
+      - name: Test legacy manual exception mapping controls
+        run: node tests/legacy-manual-mapping.test.cjs
