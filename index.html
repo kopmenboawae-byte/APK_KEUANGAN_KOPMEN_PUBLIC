@@ -1639,9 +1639,11 @@
           </div>
           <div class="card-title">Baris debit dan kredit</div>
           <div id="journalLinesEditor"></div>
+          <div class="form-group" style="margin-top:10px;"><label>Alasan jurnal pembukaan (isi hanya jika membuat saldo awal)</label><textarea id="openingJournalReason" class="form-control" rows="2" maxlength="240" placeholder="Dasar rekonsiliasi dan dokumen pendukung"></textarea></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px;">
             <button type="button" class="btn btn-outline btn-sm" onclick="addManualJournalLine()">＋ Tambah Baris</button>
-            <button type="submit" class="btn btn-primary btn-sm">Simpan sebagai Draft</button>
+            <button type="submit" class="btn btn-primary btn-sm">Simpan Draft Jurnal Manual</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="saveOpeningJournalDraft()">Simpan Draft Jurnal Pembukaan</button>
           </div>
         </form>
         <div id="journalWorkbenchMessage" style="font-size:.78rem;color:var(--muted);margin-bottom:12px;"></div>
@@ -6955,15 +6957,33 @@
       addManualJournalLine();
       addManualJournalLine();
     }
-    async function saveManualJournalDraft(event) {
-      event.preventDefault();
+    function collectJournalEditorLines() {
       const rows = Array.from(document.querySelectorAll('#journalLinesEditor .journal-line-row'));
-      const lines = rows.map(row => ({
+      return rows.map(row => ({
         account_code: row.querySelector('.journal-account').value,
         debit: Number(row.querySelector('.journal-debit').value || 0),
         credit: Number(row.querySelector('.journal-credit').value || 0),
         memo: row.querySelector('.journal-memo').value || ''
       }));
+    }
+    async function saveOpeningJournalDraft() {
+      const reason = ((document.getElementById('openingJournalReason') || {}).value || '').trim();
+      try {
+        const record = await saveOpeningBalanceVersion({
+          effective_date: document.getElementById('manualJournalDate').value,
+          reason, lines: collectJournalEditorLines(),
+          balances: { note:'Saldo awal pembukaan melalui menu Transaksi' }
+        });
+        document.getElementById('openingJournalReason').value = '';
+        toast('Draft jurnal pembukaan '+record.id+' tersimpan. Belum memengaruhi laporan sampai diposting.', 'success');
+        await loadAccountingWorkbench();
+        await loadOpeningBalanceHistory();
+      } catch(e) { toast('Draft jurnal pembukaan ditolak: '+e.message, 'error'); }
+    }
+
+    async function saveManualJournalDraft(event) {
+      event.preventDefault();
+      const lines = collectJournalEditorLines();
       try {
         const result = await createJournalDraft({
           tanggal: document.getElementById('manualJournalDate').value,
@@ -6996,21 +7016,27 @@
         await new Promise((resolve,reject)=>{
           let tx;
           try {
-            const stores = db.objectStoreNames.contains('audit_log') ? ['journal_entries','audit_log'] : ['journal_entries'];
+            const stores = ['journal_entries','opening_balance_versions'];
+            if (db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
             tx = db.transaction(stores,'readwrite');
             const store = tx.objectStore('journal_entries'), req = store.get(id);
             req.onsuccess = () => {
               const current = req.result;
               if (!current || current.status !== 'draft') { try { tx.abort(); } catch (_) {} return; }
               store.put({ ...current, status:'void', voided_at:now, void_reason:reason.trim() });
+              if (current.source_type === 'opening_balance' && current.source_id) {
+                const versions=tx.objectStore('opening_balance_versions'),vr=versions.get(current.source_id);
+                vr.onsuccess=()=>{if(vr.result)versions.put({...vr.result,status:'void',voided_at:now,void_reason:reason.trim()});};
+              }
               if (stores.includes('audit_log')) tx.objectStore('audit_log').add({waktu:now,aksi:'BATAL_DRAFT_JURNAL',target_id:id,keterangan:reason.trim()});
             };
             tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Pembatalan draft gagal'));tx.onabort=()=>reject(tx.error||new Error('Draft tidak dapat dibatalkan'));
           } catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}
         });
-        markDataChanged();toast('Draft jurnal dibatalkan', 'success');await loadAccountingWorkbench();
+        markDataChanged();toast('Draft jurnal dibatalkan', 'success');await loadAccountingWorkbench();await loadOpeningBalanceHistory();
       } catch(e){toast('Pembatalan draft gagal: '+e.message,'error');}
     }
+
     async function loadAccountingWorkbench() {
       const host = document.getElementById('accountingWorkbench');
       if (!host) return;
