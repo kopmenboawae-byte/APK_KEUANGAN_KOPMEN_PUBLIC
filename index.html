@@ -6565,10 +6565,12 @@
       if (hasOpening) {
         const reason = prompt('Alasan menambahkan saldo awal dari daftar sumber Bon Kas:');
         if (!reason || !reason.trim()) return;
+        const effectiveDate = prompt('Tanggal efektif saldo awal sumber (YYYY-MM-DD):', '2026-11-20');
+        if (!accountingIsValidDate(effectiveDate)) { toast('Tanggal efektif tidak valid.', 'error'); return; }
         const versions = await getAll('opening_balance_versions');
         const previousVersion = versions.filter(v => v.status !== 'superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0] || null;
         const snapshot = list => list.map(r=>({id:r.id,nba:r.nba,nama:r.nama,saldo_awal:Number(r.saldo_awal||0)}));
-        openingVersion = { id:accountingId('OPEN-BK-SEED'), effective_date:todayStr(), reason:reason.trim(),
+        openingVersion = { id:accountingId('OPEN-BK-SEED'), effective_date:effectiveDate, reason:reason.trim(),
           status:'legacy_unposted', source_type:'bk_master_seed', previous_version_id:previousVersion?previousVersion.id:null,
           changed_fields:additions.map(r=>'bk_rekening:'+r.id), previous_balances:{bk_accounts:snapshot(existing)},
           balances:{bk_accounts:snapshot(existing.concat(additions))}, created_at:new Date().toISOString(), created_by:'local-user' };
