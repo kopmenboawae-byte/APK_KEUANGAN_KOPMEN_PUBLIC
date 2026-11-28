@@ -2731,6 +2731,15 @@
       if(period&&(period.status==='closed'||period.locked===true))throw new Error('Periode '+year+' sudah dikunci.');
       const checked=accountingValidateJournalLines(detail.lines,await getAll('chart_accounts'));
       if(checked.debit_total!==detail.debit_total||checked.credit_total!==detail.credit_total)throw new Error('Total jurnal berubah; posting ditolak.');
+      if(detail.source_type==='bk_accountability'&&detail.source_id){
+        const bkRecord=(await getAll('bk_accountability')).find(r=>String(r.id)===String(detail.source_id));
+        if(!bkRecord)throw new Error('Catatan subledger BK tidak ditemukan.');
+        if(bkRecord.kind==='accountability'&&!String(bkRecord.evidence_reference||'').trim())throw new Error('Pertanggungjawaban beban wajib memiliki referensi bukti sebelum posting.');
+        if(bkRecord.kind!=='advance'){
+          const outstanding=await getBkOutstandingBalance(bkRecord.bk_rekening_id,detail.tanggal);
+          if(bkRecord.amount>outstanding.ledger_balance)throw new Error('Saldo uang muka BK saat posting tidak cukup. Saldo tersedia '+formatRp(outstanding.ledger_balance)+'.');
+        }
+      }
       const now=new Date().toISOString();
       await new Promise((resolve,reject)=>{
         let tx;
@@ -6584,6 +6593,7 @@
         if(!accountingIsValidDate(tanggal))throw new Error('Tanggal aktivitas BK tidak valid.');
         if(!Number.isSafeInteger(amount)||amount<=0)throw new Error('Jumlah harus berupa rupiah bulat positif.');
         if(!description)throw new Error('Uraian aktivitas wajib diisi.');
+        if(kind==='accountability'&&!evidence)throw new Error('Referensi bukti wajib diisi untuk pertanggungjawaban beban.');
         const holders=await getAllBkRekening(),holder=holders.find(r=>String(r.id)===String(holderId));
         if(!holder)throw new Error('Pemegang BK tidak ditemukan.');
         if(kind!=='advance'){
