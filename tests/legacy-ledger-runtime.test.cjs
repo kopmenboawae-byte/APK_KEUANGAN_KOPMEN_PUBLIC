@@ -38,11 +38,11 @@ async function run(){
   put:async(store,value)=>putRaw(ctx.db,store,value),getAllBkRekening:async()=>[bk],ensureAccountingFoundation:async()=>{},
   markDataChanged:()=>{changes++;},loadAccountingWorkbench:async()=>{},toast:(message,type)=>messages.push({message,type}),
   document:{getElementById:id=>id==='legacyLedgerMigrationSummary'?host:null},postJournalEntry:()=>{throw new Error('must never post');}};
- for(const [n,a] of [['accountingIsValidDate',false],['normNba',false],['parseBkKeterangan',false],['accountingValidateJournalLines',false],['getAccountingTransactions',true],['buildLegacyTransactionJournalProposal',false],['createJournalDraft',true],['prepareLegacyTransactionLedgerDrafts',true]])install(ctx,n,a);
+ for(const [n,a] of [['accountingIsValidDate',false],['normNba',false],['parseBkKeterangan',false],['normalizeLegacyPartyCode',false],['parseLegacyPartyAllocations',false],['accountingValidateJournalLines',false],['getAccountingTransactions',true],['buildLegacyTransactionJournalProposal',false],['createJournalDraft',true],['prepareLegacyTransactionLedgerDrafts',true]])install(ctx,n,a);
  const before=JSON.stringify(await allRaw(db,'transaksi'));
  await ctx.prepareLegacyTransactionLedgerDrafts();
  let journals=await allRaw(db,'journal_entries'),lines=await allRaw(db,'journal_lines'),history=await allRaw(db,'change_history');
- console.log('DEBUG migration',messages,history);assert.equal(journals.length,2);assert.ok(journals.every(j=>j.status==='draft'));assert.equal(lines.length,4);
+ assert.equal(journals.length,2);assert.ok(journals.every(j=>j.status==='draft'));assert.equal(lines.length,4);
  assert.deepEqual(journals.map(j=>j.source_key).sort(),['LEGACY-TRX:BK-1','LEGACY-TRX:SALE-1']);
  assert.equal(history.filter(h=>h.action==='LEGACY_LEDGER_DRAFT_CREATED').length,2);
  assert.equal(history.filter(h=>h.action==='LEGACY_LEDGER_HELD').length,3);
