@@ -52,6 +52,11 @@ assert.ok(html.includes('id="tutupJurnalSection"'), 'Daily journal close must be
 assert.ok(!html.includes('id="page-tutupjurnal"'), 'Daily close must not remain a separate operational page');
 assert.ok(html.includes('SIMPAN_TUTUP_JURNAL'), 'Daily close must be audited');
 assert.ok(html.includes("status: 'legacy_unposted'"), 'Opening balance snapshots must remain unposted');
+const createDraftStart = html.indexOf('async function createJournalDraft(payload)');
+const createDraftEnd = html.indexOf('async function getJournalEntryDetails', createDraftStart);
+assert.ok(createDraftStart >= 0 && createDraftEnd > createDraftStart);
+assert.ok(html.slice(createDraftStart, createDraftEnd).includes("stores.push('opening_balance_versions')"), 'Opening journal and version must be stored atomically');
+assert.ok(html.slice(createDraftStart, createDraftEnd).includes('opening_balance_version'), 'Draft creation must accept the opening version record');
 assert.ok(html.includes('VERSI_SALDO_AWAL_BK'), 'BK opening changes must be audited');
 assert.ok(!html.includes('id="setSaldoBkDetail"'), 'Duplicate BK opening input in Settings must stay removed');
 assert.ok(!html.includes('settings.saldoAwalPiutang = total'), 'Receivable breakdown must not overwrite opening receivables');
