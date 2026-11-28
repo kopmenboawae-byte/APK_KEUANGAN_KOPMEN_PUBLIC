@@ -31,9 +31,19 @@ function extractFunction(name) {
 }
 
 const validatorSource = extractFunction('accountingValidateJournalLines');
+const dateValidatorSource = extractFunction('accountingIsValidDate');
 const sandbox = { accountingId: (prefix) => prefix + '-TEST' };
 vm.runInNewContext(validatorSource + '\nglobalThis.validate = accountingValidateJournalLines;', sandbox);
 const validate = sandbox.validate;
+vm.runInNewContext(dateValidatorSource + '\nglobalThis.isValidDate = accountingIsValidDate;', sandbox);
+const isValidDate = sandbox.isValidDate;
+assert.equal(isValidDate('2026-11-28'), true);
+assert.equal(isValidDate('2026-02-30'), false);
+assert.equal(isValidDate('2026-13-01'), false);
+assert.equal(isValidDate('28-11-2026'), false);
+assert.ok(html.includes("index('account_date').openCursor"), 'General Ledger query should use the compound index cursor');
+assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should aggregate through a cursor');
+
 
 const accounts = [
   { code: '1101', name: 'Kas Tunai', active: true, classification_status: 'active' },
@@ -88,4 +98,4 @@ assert.throws(() => validate([
 
 assert.throws(() => validate([], accounts), /sedikitnya dua baris/);
 
-console.log('Ledger validator tests passed: 9 cases.');
+console.log('Ledger tests passed: 13 validation cases plus indexed-cursor guards.');
