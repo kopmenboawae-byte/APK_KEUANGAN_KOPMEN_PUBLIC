@@ -3099,10 +3099,24 @@
         anggota: parseAngkaID((document.getElementById('pdAnggota')||{}).value)
       };
       const total = Object.values(pd).reduce((a,b) => a + b, 0);
+      const previous = settings.piutangDetail || null;
       settings.piutangDetail = pd;
       // Rincian ini hanya breakdown referensi; tidak boleh mengubah saldo awal piutang.
       settings.id = 'app';
-      await put('settings', settings);
+      const now = new Date().toISOString();
+      await new Promise((resolve,reject)=>{
+        let tx;
+        try {
+          const stores = db.objectStoreNames.contains('audit_log') ? ['settings','audit_log'] : ['settings'];
+          tx = db.transaction(stores,'readwrite');
+          tx.objectStore('settings').put(settings);
+          if (stores.includes('audit_log')) tx.objectStore('audit_log').add({
+            waktu:now,aksi:'SIMPAN_RINCIAN_PIUTANG_REFERENSI',target_id:'settings:piutangDetail',
+            keterangan:'Total rincian '+total+'; tidak mengubah saldo awal piutang.'
+          });
+          tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Simpan rincian piutang gagal'));tx.onabort=()=>reject(tx.error||new Error('Simpan rincian piutang dibatalkan'));
+        } catch(e) { if(tx){try{tx.abort();}catch(_){}} reject(e); }
+      });
       markDataChanged();
       updatePdTotalDisplay();
       toast('Rincian piutang referensi disimpan (' + formatRp(total) + '). Saldo awal tidak diubah.', 'success');
