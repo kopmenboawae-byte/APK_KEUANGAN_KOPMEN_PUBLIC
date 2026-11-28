@@ -2309,8 +2309,8 @@
   <script>
     // ===================== CONFIG & CONSTANTS =====================
     const DB_NAME = 'LUDJU_REPORT_DB';
-    const DB_VERSION = 11; // v11: stok opname bertanggal
-    const APP_VERSION = '1.9.1-Pro';
+    const DB_VERSION = 12; // v12: fondasi jurnal dan subledger
+    const APP_VERSION = '1.10.0-Pro';
     const FS_HANDLE_ID = 'fs_backup_dir';
 
     /**
@@ -2319,9 +2319,10 @@
      */
     const LUDJU = {
       version: APP_VERSION,
-      modules: ['db', 'transaksi', 'kas', 'sibuhar', 'bonkas', 'piutang', 'stokopname', 'laporan', 'backup', 'security', 'archive', 'dashboard', 'import'],
+      modules: ['db', 'transaksi', 'kas', 'sibuhar', 'bonkas', 'piutang', 'stokopname', 'ledger', 'laporan', 'backup', 'security', 'archive', 'dashboard', 'import'],
       catalog: [
-        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v11 · transaksi, settings, BK, arsip, snapshot, stok opname' },
+        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v12 · transaksi, jurnal, buku besar, subledger, arsip, snapshot' },
+        { id: 'ledger', nama: 'Fondasi Jurnal & Buku Besar', status: 'partial', ket: 'Bagan akun, jurnal seimbang, posting immutable, periode dan saldo awal berversi; belum menggantikan laporan legacy' },
         { id: 'transaksi', nama: 'Transaksi', status: 'aktif', ket: 'CRUD · filter · kontrak data resmi' },
         { id: 'kas', nama: 'Kas Harian', status: 'aktif', ket: 'Mutasi kas buku · tanpa BK & Titipan' },
         { id: 'sibuhar', nama: 'Sibuhar', status: 'aktif', ket: 'Stor / Tarik · saldo berjalan' },
@@ -2519,6 +2520,21 @@
             const so = database.createObjectStore('stok_opname', { keyPath: 'id' });
             so.createIndex('tanggal', 'tanggal', { unique: false });
           }
+          // v12: store ledger baru ditambahkan tanpa mengubah atau menghapus store lama.
+          const addStore=(name,options,indexes)=>{if(database.objectStoreNames.contains(name))return;const store=database.createObjectStore(name,options||{keyPath:'id'});(indexes||[]).forEach(([n,k,u])=>store.createIndex(n,k,{unique:!!u}));};
+          addStore('chart_accounts',{keyPath:'code'},[['group','group',false],['type','type',false]]);
+          addStore('journal_entries',{keyPath:'id'},[['tanggal','tanggal',false],['status','status',false],['source_key','source_key',true]]);
+          addStore('journal_lines',{keyPath:'id'},[['journal_id','journal_id',false],['account_code','account_code',false],['tanggal','tanggal',false]]);
+          addStore('opening_balance_versions',{keyPath:'id'},[['effective_date','effective_date',false],['status','status',false]]);
+          addStore('accounting_periods',{keyPath:'id'},[['start_date','start_date',false],['end_date','end_date',false],['status','status',false]]);
+          addStore('payment_accounts',{keyPath:'id'},[['method','method',false],['active','active',false]]);
+          addStore('settlements',{keyPath:'id'},[['provider','provider',false],['settlement_date','settlement_date',false],['status','status',false]]);
+          addStore('subledger_parties',{keyPath:'id'},[['type','type',false],['code','code',true]]);
+          addStore('bk_accountability',{keyPath:'id'},[['bk_rekening_id','bk_rekening_id',false],['tanggal','tanggal',false],['status','status',false]]);
+          addStore('inventory_items',{keyPath:'id'},[['sku','sku',true],['name','name',false]]);
+          addStore('inventory_movements',{keyPath:'id'},[['item_id','item_id',false],['tanggal','tanggal',false],['source_id','source_id',false]]);
+          addStore('import_staging',{keyPath:'id'},[['batch_id','batch_id',false],['status','status',false]]);
+          addStore('change_history',{keyPath:'id',autoIncrement:true},[['target_id','target_id',false],['changed_at','changed_at',false]]);
         };
         req.onsuccess = (e) => { db = e.target.result; resolve(db); };
         req.onerror = (e) => reject(e.target.error);
@@ -2545,6 +2561,56 @@
       archived.forEach(r => { if (r && r.id != null) byId.set(String(r.id), r); });
       active.forEach(r => { if (r && r.id != null) byId.set(String(r.id), r); });
       return Array.from(byId.values()).filter(r => r.status_data !== 'dibatalkan');
+    }
+
+
+    // ===================== ACCOUNTING LEDGER FOUNDATION =====================
+    // Existing legacy transactions are preserved and are never auto-posted.
+    const ACCOUNTING_DEFAULT_ACCOUNTS = [
+      ['1101','Kas Tunai','asset','debit','Aset Lancar','active'],['1102','Bank','asset','debit','Aset Lancar','active'],['1103','Piutang Settlement QRIS','asset','debit','Aset Lancar','active'],['1104','Piutang Usaha Anggota','asset','debit','Aset Lancar','active'],['1105','Persediaan Barang Dagang','asset','debit','Aset Lancar','active'],['1106','Uang Muka / Bon Kas','asset','debit','Aset Lancar','active'],['1107','Simpanan / Deposito Sibuhar','asset','debit','Aset Lancar','active'],['1108','Uang Muka Pemasok','asset','debit','Aset Lancar','active'],['1201','Inventaris / Aset Tetap','asset','debit','Aset Tetap','active'],['1291','Akumulasi Penyusutan Inventaris','contra_asset','credit','Aset Tetap','active'],['2101','Hutang Usaha / Pemasok','liability','credit','Liabilitas Jangka Pendek','active'],['2102','Uang Muka Pelanggan','liability','credit','Liabilitas Jangka Pendek','active'],['2103','Titipan Pihak Ketiga','liability','credit','Liabilitas Jangka Pendek','needs_review'],['2104','Pinjaman / Utang Pihak Lain','liability','credit','Liabilitas','needs_review'],['3101','Simpanan Pokok Anggota','equity','credit','Ekuitas','needs_review'],['3102','Simpanan Wajib Anggota','equity','credit','Ekuitas','needs_review'],['3201','Modal Penyerta','equity','credit','Ekuitas','needs_review'],['3301','Cadangan Koperasi','equity','credit','Ekuitas','active'],['3401','SHU Belum Dibagi / Ditahan','equity','credit','Ekuitas','active'],['4101','Penjualan Barang','revenue','credit','Pendapatan','active'],['4190','Pendapatan Operasional Lain','revenue','credit','Pendapatan','active'],['4191','Retur / Pengurang Penjualan','contra_revenue','debit','Pendapatan','active'],['4199','Pendapatan Lain-lain','revenue','credit','Pendapatan','needs_review'],['5101','Harga Pokok Penjualan','expense','debit','Beban Pokok','active'],['6101','Beban Operasional','expense','debit','Beban','active'],['6102','Beban Gaji / Imbalan','expense','debit','Beban','active'],['6103','Beban Transportasi','expense','debit','Beban','active'],['6104','Beban Administrasi Bank / MDR','expense','debit','Beban','active'],['6105','Beban Penyusutan','expense','debit','Beban','active'],['6199','Beban Lain-lain','expense','debit','Beban','needs_review']
+    ].map(([code,name,type,normal_balance,group,classification_status]) => ({code,name,type,normal_balance,group,classification_status,active:true,system:true}));
+    const LEDGER_BACKUP_STORES = ["chart_accounts","journal_entries","journal_lines","opening_balance_versions","accounting_periods","payment_accounts","settlements","subledger_parties","bk_accountability","inventory_items","inventory_movements","import_staging","change_history"];
+    function accountingId(prefix) { const token=(window.crypto&&typeof window.crypto.randomUUID==='function')?window.crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2,12)); return prefix+'-'+token; }
+    async function ensureAccountingFoundation() {
+      const current=await getAll('chart_accounts'), known=new Set(current.map(a=>String(a.code)));
+      const missing=ACCOUNTING_DEFAULT_ACCOUNTS.filter(a=>!known.has(a.code)); if(!missing.length)return;
+      await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction('chart_accounts','readwrite');const store=tx.objectStore('chart_accounts');missing.forEach(a=>store.add(a));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Inisialisasi bagan akun gagal'));tx.onabort=()=>reject(tx.error||new Error('Inisialisasi bagan akun dibatalkan'));}catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}});
+    }
+    function accountingValidateJournalLines(lines,accounts) {
+      if(!Array.isArray(lines)||lines.length<2)throw new Error('Jurnal harus memiliki sedikitnya dua baris.');
+      const map=new Map(accounts.map(a=>[String(a.code),a]));let debit=0,credit=0;
+      const normalized=lines.map((line,index)=>{const code=String(line.account_code||'').trim(),account=map.get(code);if(!account||account.active===false)throw new Error('Akun tidak ditemukan atau nonaktif: '+(code||'(kosong)'));if(account.classification_status==='needs_review')throw new Error('Klasifikasi akun '+code+' belum diverifikasi.');const d=Number(line.debit||0),c=Number(line.credit||0);if(!Number.isSafeInteger(d)||!Number.isSafeInteger(c)||d<0||c<0||(d>0&&c>0)||(d===0&&c===0))throw new Error('Debit/kredit baris '+(index+1)+' harus rupiah bulat positif pada satu sisi saja.');debit+=d;credit+=c;if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit))throw new Error('Total jurnal melampaui batas angka aman.');return{id:accountingId('JL'),line_no:index+1,account_code:code,account_name:account.name,debit:d,credit:c,party_id:line.party_id||null,bk_rekening_id:line.bk_rekening_id||null,payment_account_id:line.payment_account_id||null,memo:String(line.memo||'').trim()};});
+      if(debit!==credit||debit<=0)throw new Error('Jurnal tidak seimbang. Debit '+debit+' dan kredit '+credit+'.');return{lines:normalized,debit_total:debit,credit_total:credit};
+    }
+    async function createJournalDraft(payload) {
+      const date=String(payload&&payload.tanggal||'');if(date.length!==10||date[4]!=='-'||date[7]!=='-')throw new Error('Tanggal jurnal tidak valid.');if(!String(payload.description||'').trim())throw new Error('Uraian jurnal wajib diisi.');await ensureAccountingFoundation();
+      if(payload.source_key){const duplicate=await new Promise((resolve,reject)=>{const tx=db.transaction('journal_entries','readonly'),req=tx.objectStore('journal_entries').index('source_key').get(String(payload.source_key));req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});if(duplicate)return{id:duplicate.id,duplicate:true,status:duplicate.status};}
+      const checked=accountingValidateJournalLines(payload.lines,await getAll('chart_accounts')),id=accountingId('JRN'),now=new Date().toISOString();
+      const header={id,tanggal:date,description:String(payload.description).trim(),status:'draft',source_type:payload.source_type||'manual',source_id:payload.source_id||null,source_key:payload.source_key||undefined,debit_total:checked.debit_total,credit_total:checked.credit_total,reversal_of:payload.reversal_of||null,created_at:now,created_by:payload.created_by||'local-user',notes:String(payload.notes||'').trim()};
+      const lines=checked.lines.map(line=>({...line,journal_id:id,tanggal:date}));
+      await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(['journal_entries','journal_lines'],'readwrite');tx.objectStore('journal_entries').add(header);lines.forEach(line=>tx.objectStore('journal_lines').add(line));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Penyimpanan draft jurnal gagal'));tx.onabort=()=>reject(tx.error||new Error('Penyimpanan draft jurnal dibatalkan'));}catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}});
+      return{id,duplicate:false,status:'draft',debit_total:checked.debit_total,credit_total:checked.credit_total};
+    }
+    async function getJournalEntryDetails(id) {
+      const header=await new Promise((resolve,reject)=>{const tx=db.transaction('journal_entries','readonly'),req=tx.objectStore('journal_entries').get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});if(!header)return null;
+      const lines=await new Promise((resolve,reject)=>{const tx=db.transaction('journal_lines','readonly'),req=tx.objectStore('journal_lines').index('journal_id').getAll(id);req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);});lines.sort((a,b)=>a.line_no-b.line_no);return{...header,lines};
+    }
+    async function postJournalEntry(id) {
+      const detail=await getJournalEntryDetails(id);if(!detail)throw new Error('Jurnal tidak ditemukan.');if(detail.status!=='draft')throw new Error('Hanya jurnal draft yang dapat diposting; jurnal posted tidak dapat diedit.');
+      const year=detail.tanggal.slice(0,4),period=await new Promise((resolve,reject)=>{const tx=db.transaction('accounting_periods','readonly'),req=tx.objectStore('accounting_periods').get(year);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});if(period&&(period.status==='closed'||period.locked===true))throw new Error('Periode '+year+' sudah dikunci.');
+      const checked=accountingValidateJournalLines(detail.lines,await getAll('chart_accounts'));if(checked.debit_total!==detail.debit_total||checked.credit_total!==detail.credit_total)throw new Error('Total jurnal berubah; posting ditolak.');const now=new Date().toISOString();
+      await new Promise((resolve,reject)=>{let tx;try{const stores=db.objectStoreNames.contains('audit_log')?['journal_entries','audit_log']:['journal_entries'];tx=db.transaction(stores,'readwrite');const store=tx.objectStore('journal_entries'),req=store.get(id);req.onsuccess=()=>{const current=req.result;if(!current||current.status!=='draft'){try{tx.abort();}catch(_){}return;}store.put({...current,status:'posted',posted_at:now});if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'POST_JURNAL',target_id:id,keterangan:'Jurnal diposting; debit/kredit '+checked.debit_total});};tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Posting jurnal gagal'));tx.onabort=()=>reject(tx.error||new Error('Posting jurnal dibatalkan atau status berubah'));}catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}});
+      markDataChanged();return{id,status:'posted',debit_total:checked.debit_total,credit_total:checked.credit_total};
+    }
+    async function reversePostedJournal(id,reason) {
+      const original=await getJournalEntryDetails(id);if(!original||original.status!=='posted')throw new Error('Hanya jurnal posted yang dapat dibalik.');const note=String(reason||'').trim();if(!note)throw new Error('Alasan pembalikan wajib diisi.');
+      const draft=await createJournalDraft({tanggal:todayStr(),description:'Pembalikan jurnal '+id,source_type:'reversal',source_id:id,source_key:'REVERSAL:'+id,reversal_of:id,notes:note,lines:original.lines.map(line=>({account_code:line.account_code,debit:line.credit,credit:line.debit,party_id:line.party_id,bk_rekening_id:line.bk_rekening_id,payment_account_id:line.payment_account_id,memo:'Pembalikan: '+(line.memo||'')}))});if(draft.duplicate)return draft;return await postJournalEntry(draft.id);
+    }
+    async function saveOpeningBalanceVersion(payload) {
+      const date=String(payload&&payload.effective_date||'');if(date.length!==10||date[4]!=='-'||date[7]!=='-')throw new Error('Tanggal efektif saldo awal tidak valid.');const reason=String(payload.reason||'').trim();if(!reason)throw new Error('Alasan perubahan saldo awal wajib diisi.');
+      const checked=accountingValidateJournalLines(payload.lines,await getAll('chart_accounts')),versions=await getAll('opening_balance_versions'),previous=versions.filter(v=>v.status!=='superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0]||null,id=accountingId('OPEN'),now=new Date().toISOString();
+      const journal=await createJournalDraft({tanggal:date,description:'Jurnal pembukaan saldo awal',source_type:'opening_balance',source_id:id,source_key:'OPENING:'+id,notes:reason,lines:payload.lines});
+      const record={id,effective_date:date,reason,status:'draft',previous_version_id:previous?previous.id:null,balances:payload.balances||null,journal_id:journal.id,debit_total:checked.debit_total,credit_total:checked.credit_total,created_at:now,created_by:payload.created_by||'local-user'};await put('opening_balance_versions',record);return record;
     }
 
     async function put(storeName, data) {
@@ -5414,6 +5480,7 @@
       if (Array.isArray(data.audit_log) && db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
       if (Array.isArray(data.bk_rekening) && db.objectStoreNames.contains('bk_rekening')) stores.push('bk_rekening');
       if (Array.isArray(data.stok_opname) && db.objectStoreNames.contains('stok_opname')) stores.push('stok_opname');
+      LEDGER_BACKUP_STORES.forEach(name=>{if(Array.isArray(data[name])&&db.objectStoreNames.contains(name))stores.push(name);});
       const settingsRows = Array.isArray(data.settings) ? data.settings.slice() : (data.settings && typeof data.settings === 'object' ? [data.settings] : []);
       if (hasSettings && localFolderRecord && !settingsRows.some(x => x && x.id === FS_HANDLE_ID)) settingsRows.push(localFolderRecord);
       await new Promise((resolve, reject) => {
@@ -5431,6 +5498,7 @@
           if (stores.includes('audit_log')) replaceRows('audit_log', data.audit_log);
           if (stores.includes('bk_rekening')) replaceRows('bk_rekening', data.bk_rekening);
           if (stores.includes('stok_opname')) replaceRows('stok_opname', data.stok_opname);
+          LEDGER_BACKUP_STORES.forEach(name=>{if(stores.includes(name))replaceRows(name,data[name]);});
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => reject(tx.error || new Error('Restore database gagal'));
           tx.onabort = () => reject(tx.error || new Error('Restore database dibatalkan'));
@@ -5479,26 +5547,11 @@
       return await validateBackupTransactionIntegrity(data);
     }
     async function buildBackupPayload() {
-      const trx = await getAll('transaksi');
-      const arsip = db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : [];
-      const stocktakes = db.objectStoreNames.contains('stok_opname') ? await getAll('stok_opname') : [];
-      const audit = db.objectStoreNames.contains('audit_log') ? await getAll('audit_log') : [];
-      // Jangan sertakan handle filesystem atau snapshot internal (menghindari backup bersarang).
-      const set = (await getAll('settings')).filter(s => s.id !== FS_HANDLE_ID);
-      let bk = [];
-      try { bk = await getAllBkRekening(); } catch (e) {}
-      return {
-        version: APP_VERSION,
-        exported_at: new Date().toISOString(),
-        type: 'ludju-backup',
-        coverage: ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings', 'stok_opname'],
-        settings: set,
-        transaksi: trx,
-        transaksi_arsip: arsip,
-        audit_log: audit,
-        bk_rekening: bk,
-        stok_opname: stocktakes
-      };
+      const trx=await getAll('transaksi'), arsip=db.objectStoreNames.contains('transaksi_arsip')?await getAll('transaksi_arsip'):[];
+      const stocktakes=db.objectStoreNames.contains('stok_opname')?await getAll('stok_opname'):[], audit=db.objectStoreNames.contains('audit_log')?await getAll('audit_log'):[];
+      const set=(await getAll('settings')).filter(s=>s.id!==FS_HANDLE_ID);let bk=[];try{bk=await getAllBkRekening();}catch(e){}
+      const ledgerData={};for(const name of LEDGER_BACKUP_STORES)ledgerData[name]=db.objectStoreNames.contains(name)?await getAll(name):[];
+      return {version:APP_VERSION,exported_at:new Date().toISOString(),type:'ludju-backup',coverage:['transaksi','transaksi_arsip','audit_log','bk_rekening','settings','stok_opname',...LEDGER_BACKUP_STORES],settings:set,transaksi:trx,transaksi_arsip:arsip,audit_log:audit,bk_rekening:bk,stok_opname:stocktakes,...ledgerData};
     }
 
     /**
@@ -5515,7 +5568,7 @@
       backupInProgress = true;
       try {
         const data = await buildBackupPayload();
-        data.coverage = ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings', 'stok_opname'];
+        data.coverage = ['transaksi', 'transaksi_arsip', 'audit_log', 'bk_rekening', 'settings', 'stok_opname', ...LEDGER_BACKUP_STORES];
         const json = JSON.stringify(data);
         const blob = new Blob([json], { type: 'application/json' });
         const sizeKb = Math.round(blob.size / 1024);
@@ -5556,7 +5609,7 @@
         settings.lastBackupAt = new Date().toISOString();
         settings.lastBackupCount = (data.transaksi || []).length;
         settings.lastBackupMethod = method;
-        settings.lastBackupCoverage = Array.isArray(data.transaksi_arsip) && Array.isArray(data.audit_log) && Array.isArray(data.stok_opname);
+        settings.lastBackupCoverage = Array.isArray(data.transaksi_arsip) && Array.isArray(data.audit_log) && Array.isArray(data.stok_opname) && LEDGER_BACKUP_STORES.every(name => Array.isArray(data[name]));
         settings.id = 'app';
         await put('settings', settings);
         // Cadangan internal selalu disimpan (tahan clear-download / gagal unduh)
@@ -6479,6 +6532,7 @@
       setVal('lapTo', todayStr());
 
       await openDB();
+      await ensureAccountingFoundation();
       await loadSettings();
       detectFolderApiSupport();
       await loadDirHandleFromDB();
