@@ -21,7 +21,7 @@ async function run(){
  {id:'MISMATCH',import_source:'F',status_data:'aktif',tanggal:'2026-01-05',jenis:'PENJUALAN',status:'KREDIT',nilai:69000,keterangan:'001 - Member Satu : Rp58.000\n736 - Member Dua : Rp10.000',import_source_row:14,import_batch_id:'B1'}
  ];
  for(const row of rows)await putRaw(db,'transaksi',row);
- const ctx={db,confirm:()=>true,accountingId:p=>p+'-'+(++seq),getAll:async s=>allRaw(ctx.db,s),put:async(s,v)=>putRaw(ctx.db,s,v),markDataChanged:()=>{changed++;},loadLegacySubledgerPartyReview:async()=>{},loadLegacyLedgerMigrationStatus:async()=>{},toast:()=>{}};
+ const ctx={db,confirm:()=>true,accountingId:p=>p+'-'+(++seq),getAll:async s=>allRaw(ctx.db,s),put:async(s,v)=>putRaw(ctx.db,s,v),markDataChanged:()=>{changed++;},_subledgerPartyAccounts:[],refreshJournalPartyOptions:()=>{},loadLegacySubledgerPartyReview:async()=>{},loadLegacyLedgerMigrationStatus:async()=>{},toast:()=>{}};
  install(ctx,'getAccountingTransactions',true);install(ctx,'normalizeLegacyPartyCode');install(ctx,'parseLegacyPartyAllocations');install(ctx,'stageLegacySubledgerPartyCandidates',true);install(ctx,'verifyLegacySubledgerParty',true);
  const before=JSON.stringify(await allRaw(db,'transaksi'));
  await ctx.stageLegacySubledgerPartyCandidates();
