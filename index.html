@@ -6491,6 +6491,7 @@
       const related = all.filter(t => t.bk_rekening_id === id && t.status_data !== 'dibatalkan');
       // juga cek via keterangan match
       const rek = (await getAllBkRekening()).find(r => r.id === id);
+      if (rek && Number(rek.saldo_awal || 0) !== 0) { toast('Saldo awal rekening masih ada. Koreksi menjadi nol dengan alasan dan tanggal efektif sebelum menghapus.', 'error'); return; }
       if (rek) {
         const key = rek.key || normNba(rek.nba);
         all.forEach(t => {
@@ -6517,11 +6518,8 @@
 
     async function syncBkTotalToSettings() {
       const list = await getAllBkRekening();
-      let total = 0;
-      list.forEach(r => total += (r.saldo_awal || 0));
-      settings.saldoAwalBonKas = total;
-      settings.id = 'app';
-      await put('settings', settings);
+      // Saldo BK dihitung langsung dari master rekening; jangan menimpa saldo awal settings secara diam-diam.
+      return list.reduce((total, r) => total + Number(r.saldo_awal || 0), 0);
     }
 
     async function seedBkFromDefault() {
