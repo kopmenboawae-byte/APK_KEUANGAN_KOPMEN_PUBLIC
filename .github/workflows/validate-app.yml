@@ -68,3 +68,6 @@ jobs:
 
       - name: Test legacy ledger migration rules
         run: node tests/legacy-migration.test.cjs
+
+      - name: Test legacy ledger IndexedDB migration
+        run: node tests/legacy-ledger-runtime.test.cjs
