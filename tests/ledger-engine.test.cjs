@@ -166,4 +166,7 @@ assert.ok(html.includes("tx=db.transaction(stores, 'readwrite')") || html.includ
 assert.ok(html.includes("if (row._status !== 'ok') { held++; return; }"), 'Warning rows must remain held for review');
 assert.ok(!html.slice(html.indexOf('async function doImport()'), html.indexOf('// ===================== BACKUP / RESTORE')).includes("db.transaction('transaksi', 'readwrite')"), 'Import staging must not write directly to transactions');
 
+assert.ok(html.includes('transaction_status:row.status'), 'Staging must preserve the original TUNAI/KREDIT value separately from its review status');
+assert.ok(html.includes('status:row.transaction_status'), 'Approved staging rows must restore the original transaction status');
+
 console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
