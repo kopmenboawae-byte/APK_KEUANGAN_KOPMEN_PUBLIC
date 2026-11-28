@@ -3582,7 +3582,7 @@
       let bayarBon = 0, pelunasan = 0;
       let bonKas = 0, bayarBk = 0;
       let biaya = 0, terimaLain = 0, keluarLain = 0;
-      let titipan = 0;
+      let titipan = 0, titipanCount = 0;
 
       inPeriod.forEach(r => {
         const isTunai = (r.status || '').toUpperCase() === 'TUNAI';
@@ -3612,7 +3612,7 @@
         if (r.jenis === 'BIAYA') biaya += n;
         if (r.jenis === 'PENERIMAAN LAIN-LAIN') terimaLain += n;
         if (r.jenis === 'PENGELUARAN LAIN-LAIN') keluarLain += n;
-        if (isTitipanJenis(r.jenis)) titipan += n;
+        if (isTitipanJenis(r.jenis)) { titipan += n; titipanCount++; }
       });
 
       // Cumulative to 'to' date for balance sheet positions
@@ -3721,7 +3721,7 @@
                   persediaanAwal: persediaanAwalPeriode, persediaanAkhir: saldoPersediaan, hppPersediaan, inventoryBasis, inventoryWarning, stocktakeDate: stocktakeClosing ? stocktakeClosing.tanggal : null,
                   saldoKasAwalPeriode: saldoKas - (kasMasuk - kasKeluar), saldoKasAkhirPeriode: saldoKas, saldoPiutangRaw, saldoHutangRaw, saldoAnomalies,
                   labaBersihKumulatif, fiscalYearStart,
-                  bayarBon, pelunasan, bonKas, bayarBk, biaya, terimaLain, keluarLain, titipan,
+                  bayarBon, pelunasan, bonKas, bayarBk, biaya, terimaLain, keluarLain, titipan, titipanCount,
                   sibuharStor, sibuharTarik, labaKotor, labaBersih },
         posisi: {
           saldoKas, kasReal, saldoBk, saldoSibuhar, saldoPersediaan,
@@ -3919,6 +3919,7 @@
       rows.push({ label: 'Arus Kas Neto Periode', value: neto, indent: true });
       rows.push({ label: 'Saldo Kas Akhir Sistem (Kas Real + BK)', value: p.saldoKasAkhirPeriode, bold: true, border: true });
       rows.push({ note: 'Rekonsiliasi saldo kas sistem: saldo awal + arus kas neto = saldo akhir. Saldo akhir gabungan terdiri dari Kas Real ' + formatRp(s.kasReal) + ' dan Saldo BK ' + formatRp(s.saldoBk) + '. Transaksi Bon Kas, Pembayaran BK, dan Titipan Kas tidak masuk arus kas resmi.' });
+      rows.push({ note: 'Di luar arus kas resmi pada periode ini: ' + (p.titipanCount || 0) + ' transaksi TITIPAN KAS senilai ' + formatRp(p.titipan || 0) + '. Nilai tersebut tidak menambah saldo kas atau pos kewajiban Titipan dalam perhitungan saat ini. Perlakuan mengikuti laporan sumber; pastikan substansi dana dan bukti apakah dana benar-benar berada di kas koperasi sebelum mengubah klasifikasi.' });
       rows.push({ note: 'Laporan resmi: termasuk Penjualan Lelang tunai. Tanpa Bon Kas, Pembayaran BK, dan Titipan Kas.' });
       return { rows, meta: { neto } };
     }
