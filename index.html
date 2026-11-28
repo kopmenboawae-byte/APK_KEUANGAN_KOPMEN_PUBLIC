@@ -1753,6 +1753,7 @@
           <button class="btn btn-primary btn-sm" onclick="exportLaporanPDF()" title="Export / Cetak PDF">PDF</button>
         </div>
       </div>
+      <div class="card" style="border-left:4px solid var(--primary);"><strong style="font-size:.86rem;">Cara menggunakan laporan</strong><ol style="padding-left:18px;margin:6px 0 0;font-size:.8rem;color:var(--muted);"><li>Tentukan tanggal Dari dan Sampai.</li><li>Pilih jenis laporan: Neraca, Laba Rugi, Arus Kas, atau Penjelasan.</li><li>Tekan Tampilkan Laporan untuk memperbarui hasil sesuai periode.</li></ol><p style="font-size:.78rem;color:var(--muted);margin:7px 0 0;">Periksa peringatan pada laporan. HPP yang memakai snapshot Stok Opname berstatus Belum Diverifikasi tetap merupakan angka referensi sementara, bukan hasil stok fisik yang telah disahkan.</p></div>
       <div class="tabs">
         <div class="tab active" data-lap="neraca" onclick="switchLap('neraca')">Neraca</div>
         <div class="tab" data-lap="labarugi" onclick="switchLap('labarugi')">Laba Rugi</div>
@@ -1761,27 +1762,27 @@
       </div>
       <div class="filter-bar">
         <div class="form-group" style="margin:0;">
-          <label>Dari</label>
+          <label>Dari tanggal</label>
           <input type="date" id="lapFrom" class="form-control" />
         </div>
         <div class="form-group" style="margin:0;">
-          <label>Sampai</label>
+          <label>Sampai tanggal</label>
           <input type="date" id="lapTo" class="form-control" />
         </div>
-        <button class="btn btn-primary btn-sm" onclick="loadLaporan()" style="align-self:flex-end;">Tampilkan</button>
+        <button class="btn btn-primary btn-sm" onclick="loadLaporan()" style="align-self:flex-end;">Tampilkan Laporan</button>
       </div>
       <div id="laporanContent"></div>
     </div>
 
     <div id="page-import" class="page">
       <div class="section-title">
-        <span>Data & Cadangan</span>
+        <span>Data & Backup</span>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-outline btn-sm" type="button" onclick="showPage('settings')">Pengaturan</button>
           <button class="btn btn-outline btn-sm" type="button" onclick="exitApp()">Keluar + Backup</button>
         </div>
       </div>
-      <div class="card-title" style="margin-bottom:8px;">Import Excel</div>
+      <div class="card-title" style="margin-bottom:8px;">01 · Import Data Transaksi</div>
       <div class="card">
         <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px;">
           Pilih file <strong>FORMAT.xlsx</strong> (atau file serupa). Sistem akan membaca sheet <code>DATA_TRANSAKSI</code> dan saldo awal.
@@ -1798,12 +1799,12 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Saldo Awal Tahun</div>
+        <div class="card-title">02 · Ringkasan Saldo Awal Tahun</div>
         <div id="saldoAwalSummary" style="font-size:0.85rem;"></div>
         <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showPage('settings')">Edit Saldo Awal</button>
       </div>
       <div class="card">
-        <div class="card-title">Master Rekening Bon Kas (BK)</div>
+        <div class="card-title">03 · Master Rekening Bon Kas (BK)</div>
         <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="openBkRekeningModal()">+ Tambah Rekening</button>
@@ -1817,7 +1818,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Database & Cadangan Otomatis</div>
+        <div class="card-title">04 · Backup, Restore & Database</div>
         <div id="backupStatusCard" style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:0.8rem;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
             <div>
@@ -1846,16 +1847,16 @@
           <button class="btn btn-primary btn-sm" onclick="backupDB(true)">Backup Sekarang</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('restoreInput').click()">Restore JSON (file)</button>
           <input type="file" id="restoreInput" accept=".json" style="display:none;" onchange="restoreDB(event)" />
-          <button class="btn btn-danger btn-sm" onclick="resetDB()">Kosongkan Semua Transaksi</button>
+          <button class="btn btn-danger btn-sm" onclick="resetDB()">Kosongkan Transaksi Aktif</button>
         </div>
         <p style="font-size:0.75rem;color:var(--muted);margin-top:8px;">
-          Folder terhubung → file ditulis ke folder (tanpa dialog unduh). Belum terhubung → unduh ke folder Downloads.<br>
-          Kosongkan transaksi sebelum import ulang Excel. Saldo awal &amp; rekening BK tidak ikut terhapus.
+          Backup disimpan ke folder terhubung atau diunduh ke Downloads. Restore mengganti data aplikasi sesuai isi file cadangan; pastikan file yang dipilih benar.<br>
+          Tombol Kosongkan Transaksi Aktif hanya menghapus transaksi aktif; arsip, saldo awal, rekening BK, dan log audit dipertahankan. Cadangan internal dibuat sebelum pengosongan.
         </p>
         <div id="dbInfo" style="margin-top:10px;font-size:0.8rem;color:var(--muted);"></div>
       </div>
       <div class="card">
-        <div class="card-title">Arsip & Efisiensi <span class="module-tag">Modul</span></div>
+        <div class="card-title">05 · Arsip Transaksi <span class="module-tag">Modul</span></div>
         <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
           Pindahkan transaksi tahun lama ke arsip internal (tetap bisa diekspor). Data aktif tetap ringan.
         </p>
