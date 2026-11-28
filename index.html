@@ -1664,7 +1664,8 @@
       </section>
 <div class="card" id="bkAdminSection">
         <div class="card-title">Administrasi Bon Kas · Master Rekening</div>
-        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Kelola rekening dan saldo awal BK dari menu Transaksi. Perubahan saldo awal wajib memiliki tanggal efektif dan alasan.</p>
+        <p style="font-size:0.76rem;color:var(--warning);margin-bottom:8px;">Master rekening berasal dari buku Bon Kas sumber per 20/11/2026. Periksa tanggal efektif dan sesuaikan bila ada perubahan.</p>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="openBkRekeningModal()">+ Tambah Rekening</button>
           <button class="btn btn-outline btn-sm" onclick="seedBkFromDefault()">Isi 24 Rekening Sumber</button>
@@ -1675,6 +1676,26 @@
             <tbody id="bkMasterTable"></tbody>
           </table>
         </div>
+        <div class="card-title" style="margin-top:16px;">Subledger BK dari jurnal posted</div>
+        <p style="font-size:.76rem;color:var(--muted);">Saldo ledger dihitung hanya dari jurnal posted akun 1106. Saldo awal pada master adalah referensi legacy dan tidak otomatis menjadi saldo yang dapat dipertanggungjawabkan.</p>
+        <div class="table-wrap"><table><thead><tr><th>NBA</th><th>Nama</th><th class="text-right">Referensi Legacy</th><th class="text-right">Saldo Ledger</th><th>Status</th></tr></thead><tbody id="bkSubledgerSummary"></tbody></table></div>
+        <div class="card-title" style="margin-top:18px;">Bon Kas, Pengembalian, dan Pertanggungjawaban</div>
+        <p style="font-size:.76rem;color:var(--muted);">Setiap aktivitas disimpan sebagai draft jurnal. Pengembalian atau pertanggungjawaban hanya dapat diposting jika uang muka pada ledger sudah ada. Saldo legacy yang belum dijurnal tidak otomatis dianggap uang muka tersedia.</p>
+        <form id="bkAccountabilityForm" onsubmit="saveBkAccountabilityDraft(event)">
+          <div class="grid-2">
+            <div class="form-group"><label>Pemegang BK *</label><select id="bkAccHolder" class="form-control" required><option value="">Pilih pemegang</option></select></div>
+            <div class="form-group"><label>Jenis aktivitas *</label><select id="bkAccKind" class="form-control" onchange="onBkAccountabilityKindChange()"><option value="advance">Bon Kas / Uang Muka</option><option value="cash_return">Pengembalian Uang</option><option value="accountability">Pertanggungjawaban Beban</option></select></div>
+            <div class="form-group"><label>Tanggal *</label><input type="date" id="bkAccDate" class="form-control" required /></div>
+            <div class="form-group"><label>Jumlah (Rp) *</label><input type="number" id="bkAccAmount" class="form-control" min="1" step="1" required /></div>
+            <div class="form-group" id="bkAccCashAccountGroup"><label>Akun kas/bank *</label><select id="bkAccCashAccount" class="form-control"><option value="1101">1101 — Kas Tunai</option><option value="1102">1102 — Bank</option></select></div>
+            <div class="form-group" id="bkAccExpenseGroup" style="display:none;"><label>Akun beban *</label><select id="bkAccExpenseAccount" class="form-control"><option value="">Pilih akun beban</option></select></div>
+            <div class="form-group"><label>Uraian *</label><input type="text" id="bkAccDescription" class="form-control" maxlength="180" required placeholder="Tujuan bon / pengembalian / bukti beban" /></div>
+            <div class="form-group"><label>Referensi bukti</label><input type="text" id="bkAccEvidence" class="form-control" maxlength="120" placeholder="Nomor kuitansi / dokumen" /></div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Simpan Draft Jurnal BK</button>
+        </form>
+        <div class="card-title" style="margin-top:16px;">Riwayat aktivitas BK</div>
+        <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Pemegang</th><th>Jenis</th><th>Uraian</th><th class="text-right">Jumlah</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="bkAccountabilityHistory"></tbody></table></div>
       </div>
 <div class="card" id="settings-stok">
         <div class="card-title">Stok Opname / Saldo Persediaan Bertanggal</div>
