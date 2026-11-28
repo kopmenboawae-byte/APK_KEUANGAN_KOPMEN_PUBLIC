@@ -2358,8 +2358,8 @@
   <script>
     // ===================== CONFIG & CONSTANTS =====================
     const DB_NAME = 'LUDJU_REPORT_DB';
-    const DB_VERSION = 13; // v13: indeks ledger dan saldo buku besar
-    const APP_VERSION = '1.10.7-Pro';
+    const DB_VERSION = 14; // v14: subledger BK per pemegang
+    const APP_VERSION = '1.10.8-Pro';
     const FS_HANDLE_ID = 'fs_backup_dir';
 
     /**
@@ -2370,7 +2370,7 @@
       version: APP_VERSION,
       modules: ['db', 'transaksi', 'kas', 'sibuhar', 'bonkas', 'piutang', 'stokopname', 'ledger', 'laporan', 'backup', 'security', 'archive', 'dashboard', 'import'],
       catalog: [
-        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v13 · transaksi, jurnal, buku besar, subledger, arsip, snapshot' },
+        { id: 'db', nama: 'Database', status: 'aktif', ket: 'IndexedDB v14 · transaksi, jurnal, buku besar, subledger, arsip, snapshot' },
         { id: 'ledger', nama: 'Fondasi Jurnal & Buku Besar', status: 'partial', ket: 'Bagan akun, jurnal seimbang, posting immutable, periode dan saldo awal berversi; belum menggantikan laporan legacy' },
         { id: 'transaksi', nama: 'Transaksi', status: 'aktif', ket: 'CRUD · filter · kontrak data resmi' },
         { id: 'kas', nama: 'Kas Harian', status: 'aktif', ket: 'Mutasi kas buku · tanpa BK & Titipan' },
@@ -2591,6 +2591,8 @@
           if (!jlStore.indexNames.contains('journal_id_line')) jlStore.createIndex('journal_id_line', ['journal_id','line_no'], { unique: false });
           const jeStore = upgradeTx.objectStore('journal_entries');
           if (!jeStore.indexNames.contains('status_date')) jeStore.createIndex('status_date', ['status','tanggal'], { unique: false });
+          if (!jlStore.indexNames.contains('bk_rekening_id')) jlStore.createIndex('bk_rekening_id', 'bk_rekening_id', { unique: false });
+          if (!jlStore.indexNames.contains('bk_account_date')) jlStore.createIndex('bk_account_date', ['bk_rekening_id','tanggal'], { unique: false });
         };
         req.onsuccess = (e) => { db = e.target.result; resolve(db); };
         req.onerror = (e) => reject(e.target.error);
@@ -2635,8 +2637,22 @@
     function accountingValidateJournalLines(lines,accounts) {
       if(!Array.isArray(lines)||lines.length<2)throw new Error('Jurnal harus memiliki sedikitnya dua baris.');
       const map=new Map(accounts.map(a=>[String(a.code),a]));let debit=0,credit=0;
-      const normalized=lines.map((line,index)=>{const code=String(line.account_code||'').trim(),account=map.get(code);if(!account||account.active===false)throw new Error('Akun tidak ditemukan atau nonaktif: '+(code||'(kosong)'));if(account.classification_status==='needs_review')throw new Error('Klasifikasi akun '+code+' belum diverifikasi.');const d=Number(line.debit||0),c=Number(line.credit||0);if(!Number.isSafeInteger(d)||!Number.isSafeInteger(c)||d<0||c<0||(d>0&&c>0)||(d===0&&c===0))throw new Error('Debit/kredit baris '+(index+1)+' harus rupiah bulat positif pada satu sisi saja.');debit+=d;credit+=c;if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit))throw new Error('Total jurnal melampaui batas angka aman.');return{id:accountingId('JL'),line_no:index+1,account_code:code,account_name:account.name,debit:d,credit:c,party_id:line.party_id||null,bk_rekening_id:line.bk_rekening_id||null,payment_account_id:line.payment_account_id||null,memo:String(line.memo||'').trim()};});
-      if(debit!==credit||debit<=0)throw new Error('Jurnal tidak seimbang. Debit '+debit+' dan kredit '+credit+'.');return{lines:normalized,debit_total:debit,credit_total:credit};
+      const normalized=lines.map((line,index)=>{
+        const code=String(line.account_code||'').trim(),account=map.get(code);
+        if(!account||account.active===false)throw new Error('Akun tidak ditemukan atau nonaktif: '+(code||'(kosong)'));
+        if(account.classification_status==='needs_review')throw new Error('Klasifikasi akun '+code+' belum diverifikasi.');
+        const bkId=String(line.bk_rekening_id||'').trim();
+        if(code==='1106'&&!bkId)throw new Error('Pilih pemegang Bon Kas pada setiap baris akun 1106.');
+        if(code!=='1106'&&bkId)throw new Error('Pemegang BK hanya boleh dipilih pada akun 1106.');
+        const d=Number(line.debit||0),c=Number(line.credit||0);
+        if(!Number.isSafeInteger(d)||!Number.isSafeInteger(c)||d<0||c<0||(d>0&&c>0)||(d===0&&c===0))throw new Error('Debit/kredit baris '+(index+1)+' harus rupiah bulat positif pada satu sisi saja.');
+        debit+=d;credit+=c;
+        if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit))throw new Error('Total jurnal melampaui batas angka aman.');
+        return{id:accountingId('JL'),line_no:index+1,account_code:code,account_name:account.name,debit:d,credit:c,
+          party_id:line.party_id||null,bk_rekening_id:bkId||null,payment_account_id:line.payment_account_id||null,memo:String(line.memo||'').trim()};
+      });
+      if(debit!==credit||debit<=0)throw new Error('Jurnal tidak seimbang. Debit '+debit+' dan kredit '+credit+'.');
+      return{lines:normalized,debit_total:debit,credit_total:credit};
     }
     async function createJournalDraft(payload) {
       const date=String(payload&&payload.tanggal||'');
@@ -2651,22 +2667,30 @@
         if(duplicate)return{id:duplicate.id,duplicate:true,status:duplicate.status};
       }
       const checked=accountingValidateJournalLines(payload.lines,await getAll('chart_accounts'));
+      const bkIds=[...new Set(checked.lines.filter(line=>line.account_code==='1106').map(line=>line.bk_rekening_id))];
+      if(bkIds.length){const bkRows=await getAllBkRekening(),known=new Set(bkRows.map(row=>String(row.id)));for(const bkId of bkIds)if(!known.has(String(bkId)))throw new Error('Pemegang BK tidak ditemukan: '+bkId);}
       const id=payload.journal_id||accountingId('JRN'),now=new Date().toISOString();
       const header={id,tanggal:date,description:String(payload.description).trim(),status:'draft',source_type:payload.source_type||'manual',source_id:payload.source_id||null,source_key:payload.source_key||undefined,debit_total:checked.debit_total,credit_total:checked.credit_total,reversal_of:payload.reversal_of||null,created_at:now,created_by:payload.created_by||'local-user',notes:String(payload.notes||'').trim()};
       const lines=checked.lines.map(line=>({...line,journal_id:id,tanggal:date,status:'draft',description:header.description}));
       const openingVersion=payload.opening_balance_version||null;
+      const bkRecord=payload.bk_accountability_record||null;
       await new Promise((resolve,reject)=>{
         let tx;
         try{
           const stores=['journal_entries','journal_lines'];
           if(openingVersion)stores.push('opening_balance_versions');
-          if(openingVersion&&db.objectStoreNames.contains('audit_log'))stores.push('audit_log');
+          if(bkRecord)stores.push('bk_accountability');
+          if((openingVersion||bkRecord)&&db.objectStoreNames.contains('audit_log'))stores.push('audit_log');
           tx=db.transaction(stores,'readwrite');
           tx.objectStore('journal_entries').add(header);
           lines.forEach(line=>tx.objectStore('journal_lines').add(line));
           if(openingVersion){
             tx.objectStore('opening_balance_versions').add(openingVersion);
             if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'BUAT_VERSI_SALDO_AWAL',target_id:openingVersion.id,keterangan:openingVersion.reason});
+          }
+          if(bkRecord){
+            tx.objectStore('bk_accountability').add(bkRecord);
+            if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'BUAT_DRAFT_SUBLEDGER_BK',target_id:bkRecord.id,keterangan:bkRecord.description||bkRecord.kind});
           }
           tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Penyimpanan draft jurnal gagal'));tx.onabort=()=>reject(tx.error||new Error('Penyimpanan draft jurnal dibatalkan'));
         }catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}
@@ -2690,7 +2714,7 @@
       await new Promise((resolve,reject)=>{
         let tx;
         try{
-          const stores=['journal_entries','journal_lines','opening_balance_versions'];
+          const stores=['journal_entries','journal_lines','opening_balance_versions','bk_accountability'];
           if(db.objectStoreNames.contains('audit_log'))stores.push('audit_log');
           tx=db.transaction(stores,'readwrite');
           const headerStore=tx.objectStore('journal_entries'),lineStore=tx.objectStore('journal_lines');
@@ -2707,6 +2731,10 @@
               if(current.source_type==='opening_balance'&&current.source_id){
                 const versionStore=tx.objectStore('opening_balance_versions'),versionReq=versionStore.get(current.source_id);
                 versionReq.onsuccess=()=>{if(versionReq.result)versionStore.put({...versionReq.result,status:'posted',posted_at:now});};
+              }
+              if(current.source_type==='bk_accountability'&&current.source_id){
+                const bkStore=tx.objectStore('bk_accountability'),bkReq=bkStore.get(current.source_id);
+                bkReq.onsuccess=()=>{if(bkReq.result)bkStore.put({...bkReq.result,status:'posted',posted_at:now,journal_id:id});};
               }
               if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'POST_JURNAL',target_id:id,keterangan:'Jurnal diposting; debit/kredit '+checked.debit_total});
             };
@@ -7016,7 +7044,7 @@
         await new Promise((resolve,reject)=>{
           let tx;
           try {
-            const stores = ['journal_entries','opening_balance_versions'];
+            const stores = ['journal_entries','opening_balance_versions','bk_accountability'];
             if (db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
             tx = db.transaction(stores,'readwrite');
             const store = tx.objectStore('journal_entries'), req = store.get(id);
@@ -7027,6 +7055,10 @@
               if (current.source_type === 'opening_balance' && current.source_id) {
                 const versions=tx.objectStore('opening_balance_versions'),vr=versions.get(current.source_id);
                 vr.onsuccess=()=>{if(vr.result)versions.put({...vr.result,status:'void',voided_at:now,void_reason:reason.trim()});};
+              }
+              if (current.source_type === 'bk_accountability' && current.source_id) {
+                const bk=tx.objectStore('bk_accountability'),br=bk.get(current.source_id);
+                br.onsuccess=()=>{if(br.result)bk.put({...br.result,status:'void',voided_at:now,void_reason:reason.trim()});};
               }
               if (stores.includes('audit_log')) tx.objectStore('audit_log').add({waktu:now,aksi:'BATAL_DRAFT_JURNAL',target_id:id,keterangan:reason.trim()});
             };
