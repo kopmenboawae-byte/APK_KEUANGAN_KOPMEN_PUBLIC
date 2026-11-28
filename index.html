@@ -6550,25 +6550,43 @@
         { nba:'20.735', nama:'YUSTINA RASINI RUTO GHOLO', saldo_awal:300000 }
       ];
       const existing = await getAllBkRekening();
-      if (existing.length && !confirm('Sudah ada rekening. Tambahkan rekening sumber yang belum ada? Saldo rekening yang sudah terdaftar tidak akan ditimpa.')) return;
+      if (existing.length && !confirm('Sudah ada rekening. Tambahkan yang belum ada?')) return;
       const existKeys = new Set(existing.map(r => normNba(r.nba)));
-      let added = 0;
-      for (const d of defaults) {
-        if (existKeys.has(normNba(d.nba))) continue;
-        await put('bk_rekening', {
-          id: 'BK-' + normNba(d.nba),
-          nba: d.nba,
-          nama: d.nama,
-          saldo_awal: d.saldo_awal,
-          key: normNba(d.nba),
-          updated_at: new Date().toISOString()
-        });
-        added++;
+      const additions = defaults.filter(d => !existKeys.has(normNba(d.nba))).map(d => ({
+        id:'BK-'+normNba(d.nba), nba:d.nba, nama:d.nama, saldo_awal:d.saldo_awal,
+        key:normNba(d.nba), updated_at:new Date().toISOString()
+      }));
+      if (!additions.length) { toast('Semua rekening sumber sudah ada.', 'success'); return; }
+      const hasOpening = additions.some(r => Number(r.saldo_awal || 0) !== 0);
+      let openingVersion = null;
+      if (hasOpening) {
+        const reason = prompt('Alasan menambahkan saldo awal dari daftar sumber Bon Kas:');
+        if (!reason || !reason.trim()) return;
+        const versions = await getAll('opening_balance_versions');
+        const previousVersion = versions.filter(v => v.status !== 'superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0] || null;
+        const snapshot = list => list.map(r=>({id:r.id,nba:r.nba,nama:r.nama,saldo_awal:Number(r.saldo_awal||0)}));
+        openingVersion = { id:accountingId('OPEN-BK-SEED'), effective_date:todayStr(), reason:reason.trim(),
+          status:'legacy_unposted', source_type:'bk_master_seed', previous_version_id:previousVersion?previousVersion.id:null,
+          changed_fields:additions.map(r=>'bk_rekening:'+r.id), previous_balances:{bk_accounts:snapshot(existing)},
+          balances:{bk_accounts:snapshot(existing.concat(additions))}, created_at:new Date().toISOString(), created_by:'local-user' };
       }
-      await syncBkTotalToSettings();
+      await new Promise((resolve,reject)=>{
+        let tx;
+        try {
+          const stores=['bk_rekening']; if(openingVersion)stores.push('opening_balance_versions');
+          if(openingVersion&&db.objectStoreNames.contains('audit_log'))stores.push('audit_log');
+          tx=db.transaction(stores,'readwrite');
+          additions.forEach(row=>tx.objectStore('bk_rekening').add(row));
+          if(openingVersion){
+            tx.objectStore('opening_balance_versions').put(openingVersion);
+            if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:openingVersion.created_at,aksi:'IMPORT_VERSI_SALDO_AWAL_BK',target_id:openingVersion.id,keterangan:openingVersion.reason});
+          }
+          tx.oncomplete=()=>resolve(true); tx.onerror=()=>reject(tx.error||new Error('Import rekening BK gagal')); tx.onabort=()=>reject(tx.error||new Error('Import rekening BK dibatalkan'));
+        } catch(err) { if(tx){try{tx.abort();}catch(_){}} reject(err); }
+      });
       markDataChanged();
-      await loadBkMasterTable();
-      toast(added ? 'Ditambahkan ' + added + ' rekening BK sumber' : 'Semua rekening sumber sudah terdaftar', 'success');
+      toast('Ditambahkan '+additions.length+' rekening sumber'+(openingVersion?' beserta snapshot saldo awal (belum dijurnal).':''), 'success');
+      await loadBkMasterTable(); if(openingVersion)await loadOpeningBalanceHistory();
     }
 
     async function fillTrxBkDropdown() {
