@@ -52,7 +52,7 @@ async function run(){
  const values={name:'Member Satu',evidence:'Nama dicocokkan dengan kartu anggota resmi'};
  await ctx.verifyLegacySubledgerParty({preventDefault(){},currentTarget:{elements:{namedItem:n=>({value:values[n]})}}},member.id);
  assert.equal((await allRaw(db,'subledger_parties')).find(p=>p.id===member.id).verification_status,'verified');
- assert.equal(JSON.stringify(await allRaw(db,'transaksi')),JSON.stringify([...rows,conflict]),'party review must not mutate source transactions');
+ const sourceAfter=(await allRaw(db,'transaksi')).sort((a,b)=>a.id.localeCompare(b.id)),sourceExpected=[...rows,conflict].sort((a,b)=>a.id.localeCompare(b.id));assert.equal(JSON.stringify(sourceAfter),JSON.stringify(sourceExpected),'party review must not mutate source transactions');
  assert.ok(changed>=7);
  db.close();console.log('Subledger party runtime tests: candidate extraction, verification evidence, conflict detection and idempotent re-extraction passed.');
 }
