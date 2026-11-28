@@ -7372,9 +7372,10 @@ function journalPartyOptions(selected) {
       const container = document.getElementById('journalLinesEditor');
       if (!container) return;
       const line = data || {};
+      container.style.overflowX='auto';
       const row = document.createElement('div');
       row.className = 'journal-line-row';
-      row.style.cssText = 'display:grid;grid-template-columns:minmax(160px,1.5fr) repeat(2,minmax(80px,1fr)) minmax(120px,1.1fr) minmax(140px,1.1fr) minmax(150px,1.2fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.4fr) repeat(2,minmax(70px,.8fr)) minmax(90px,1fr) minmax(110px,1fr) minmax(120px,1.1fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
       row.innerHTML = '<select class="form-control journal-account" aria-label="Akun jurnal" onchange="toggleJournalBkHolder(this);toggleJournalPartyHolder(this)">' + accountingAccountOptions(line.account_code || '') + '</select>' +
         '<input class="form-control journal-debit" type="number" min="0" step="1" inputmode="numeric" placeholder="Debit" value="' + Number(line.debit || 0) + '" />' +
         '<input class="form-control journal-credit" type="number" min="0" step="1" inputmode="numeric" placeholder="Kredit" value="' + Number(line.credit || 0) + '" />' +
@@ -7659,7 +7660,7 @@ async function loadLegacySourceIntoManualJournal(){
         const party=(await getAll('subledger_parties')).find(p=>String(p.id)===String(partyId));if(!party)throw new Error('Kandidat pihak tidak ditemukan.');
         const now=new Date().toISOString(),updated={...party,name,verification_status:'verified',verified_at:now,verified_by:'local-user',verification_note:evidence};
         await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(['subledger_parties','change_history'],'readwrite');tx.objectStore('subledger_parties').put(updated);tx.objectStore('change_history').add({target_type:'subledger_party',target_id:String(partyId),changed_at:now,action:'VERIFY_SUBLEDGER_PARTY',before:{name:party.name,verification_status:party.verification_status},after:{name,verification_status:'verified'},evidence,reviewer:'local-user'});tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Verifikasi pihak gagal'));tx.onabort=()=>reject(tx.error||new Error('Verifikasi pihak dibatalkan'));}catch(error){reject(error);}});
-        markDataChanged();await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();toast('Pihak berhasil diverifikasi dengan bukti tercatat.','success');
+        _subledgerPartyAccounts=(await getAll('subledger_parties')).filter(p=>p.verification_status==='verified');refreshJournalPartyOptions();markDataChanged();await loadLegacySubledgerPartyReview();await loadLegacyLedgerMigrationStatus();toast('Pihak berhasil diverifikasi dengan bukti tercatat.','success');
       }catch(error){toast('Verifikasi pihak gagal: '+error.message,'error');}
     }
 
