@@ -3595,6 +3595,10 @@
       const jenis = document.getElementById('trxJenis').value;
       const status = document.getElementById('trxStatus').value;
       const lokasi = document.getElementById('trxLokasi').value;
+      if (!editId && (jenis === 'BON KAS' || jenis === 'PEMBAYARAN BK')) {
+        toast('Untuk aktivitas BK baru, gunakan form Bon Kas/Pengembalian/Pertanggungjawaban pada bagian Administrasi Bon Kas. Form ini hanya untuk riwayat legacy.', 'error');
+        return;
+      }
       const nilai = getRpValue('trxNilai');
       const laba = getRpValue('trxLaba');
       let keterangan = document.getElementById('trxKeterangan').value || '';
