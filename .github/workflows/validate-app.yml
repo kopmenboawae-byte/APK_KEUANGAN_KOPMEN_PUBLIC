@@ -80,3 +80,6 @@ jobs:
 
       - name: Test legacy manual exception mapping controls
         run: node tests/legacy-manual-mapping.test.cjs
+
+      - name: Test posted-ledger report preview
+        run: node tests/ledger-report-preview.test.cjs
