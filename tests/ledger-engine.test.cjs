@@ -147,4 +147,7 @@ assert.throws(() => validate([
   { account_code: '1101', debit: 0, credit: 500 }
 ], accounts), /Pilih pemegang Bon Kas/);
 
+assert.ok(html.includes("const bk=await getAllBkRekening()"), 'Backup must fail closed when the BK master cannot be read');
+assert.ok(!html.includes("try{bk=await getAllBkRekening();}catch(e){}"), 'Backup must not silently omit BK master data');
+
 console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
