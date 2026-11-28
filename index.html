@@ -5664,7 +5664,7 @@
           const first = batch[0] || {};
           const table = batch.map(row => {
             const state = row._status || 'warn';
-            const action = state === 'ok' ? 'Valid' : '<button class="btn btn-outline btn-sm" type="button" onclick="rejectStagedImportRow(\'' + esc(row.id) + '\')">Tolak baris</button>';
+            const action = '<button class="btn btn-outline btn-sm" type="button" onclick="rejectStagedImportRow(\\'' + esc(row.id) + '\\')">Tolak baris</button>';
             return '<tr><td>' + esc(row.source_row || '—') + '</td><td>' + esc(row.tanggal || '—') + '</td><td>' + esc(row.jenis || '—') + '</td><td class="text-right">' + formatRp(Number(row.nilai) || 0) + '</td><td>' + esc(state) + '<div style="font-size:.7rem;color:var(--muted);">' + esc(row._msg || '') + '</div></td><td>' + action + '</td></tr>';
           }).join('');
           return '<div class="card" style="margin:8px 0;padding:10px;">' +
