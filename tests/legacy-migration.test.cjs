@@ -13,7 +13,7 @@ const build=vm.runInNewContext('('+source+')',ctx);
 const accounts=['1101','1105','1106','1107','4101','6101'].map(code=>({code,active:true,classification_status:'active'}));
 const bk=[{id:'BK-1',nba:'13.208',nama:'Pemegang Uji'}],base={id:'TRX-1',tanggal:'2026-01-01',jenis:'PENJUALAN',status:'TUNAI',nilai:1000,keterangan:'',import_batch_id:'B-1'};
 const proposal=(changes={},b=bk,a=accounts)=>build({...base,...changes},b,a);
-const ready=(p,c)=>{assert.equal(p.status,'ready',p.reason);assert.deepEqual(p.lines.map(x=>x.account_code),c);};
+const ready=(p,c)=>{assert.equal(p.status,'ready',p.reason);assert.equal(JSON.stringify(p.lines.map(x=>x.account_code)),JSON.stringify(c));};
 const held=(p,t)=>{assert.equal(p.status,'hold');assert.ok(p.reason.includes(t),p.reason);};
 ready(proposal(),['1101','4101']);assert.equal(proposal().source_key,'LEGACY-TRX:TRX-1');assert.ok(!proposal().lines.some(x=>x.account_code==='5101'));
 held(proposal({status:'KREDIT'}),'alokasi piutang');
@@ -28,4 +28,4 @@ held(proposal({jenis:'PEMBAYARAN BON'}),'alokasi piutang');held(proposal({jenis:
 held(proposal({jenis:'TITIPAN KAS'}),'titipan');held(proposal({jenis:'PENERIMAAN LAIN-LAIN'}),'Substansi');held(proposal({jenis:'PENGELUARAN LAIN-LAIN'}),'Substansi');
 held(proposal({nilai:1000.5}),'rupiah bulat');held(proposal({tanggal:'2026-02-30'}),'Tanggal');
 held(proposal({},bk,[...accounts.filter(x=>x.code!=='6101'),{code:'6101',active:true,classification_status:'needs_review'}]),'terverifikasi');
-console.log('Legacy ledger migration tests: 18 mapping/safety cases passed.');
+console.log('Legacy ledger migration tests: 22 mapping/safety assertions passed.');
