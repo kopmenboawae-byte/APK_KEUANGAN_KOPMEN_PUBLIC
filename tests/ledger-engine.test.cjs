@@ -47,6 +47,8 @@ assert.ok(html.includes("index('bk_account_date').openCursor"), 'BK subledger sh
 assert.ok(html.includes('saveBkAccountabilityDraft'), 'BK advance, return and accountability workflow must exist');
 assert.ok(html.includes('bk_accountability_record'), 'BK journal and subledger record must be linked');
 assert.ok(html.includes('amount>balance.ledger_balance'), 'BK returns/accountability must not exceed posted advance balance');
+assert.ok(html.includes("bkRecord.kind==='accountability'&&!String(bkRecord.evidence_reference||'').trim()"), 'Expense accountability requires evidence');
+assert.ok(html.includes('Saldo uang muka BK saat posting tidak cukup'), 'Posting must recheck available BK balance to prevent duplicate accountability');
 assert.ok(html.includes("current.source_type==='reversal'"), 'Journal reversal must update linked subledger status');
 assert.ok(html.includes("status:'reversed'"), 'Reversed BK/opening records must be marked reversed');
 assert.ok(html.includes('journalRefs.length||accountabilityRefs.length'), 'BK master with journal history must not be deletable');
