@@ -1560,7 +1560,7 @@
           <button class="btn btn-outline btn-sm" onclick="openTrxModal('PEMBELIAN BARANG')">+ Pembelian</button>
           <button class="btn btn-outline btn-sm" onclick="openTrxModal('PEMBAYARAN BON')">+ Bayar Bon</button>
           <button class="btn btn-outline btn-sm" onclick="openTrxModal('BIAYA')">+ Biaya</button>
-          <button class="btn btn-success btn-sm" onclick="showPage('tutupjurnal')">Tutup Jurnal</button>
+          <button class="btn btn-success btn-sm" onclick="showPage('transaksi'); setTimeout(()=>document.getElementById('tutupJurnalSection').scrollIntoView({behavior:'smooth',block:'start'}),120)">Tutup Jurnal</button>
           <button class="btn btn-outline btn-sm" onclick="showPage('import')">Import Excel</button>
         </div>
       </div>
@@ -1712,6 +1712,44 @@
         </div>
       </div>
       
+<section class="card" id="tutupJurnalSection">
+
+      <div class="section-title">
+        <span>Tutup Jurnal Harian</span>
+        <input type="date" id="tjTanggal" class="form-control" style="width:auto;padding:6px 10px;" onchange="loadTutupJurnal()" />
+      </div>
+      <div class="card">
+        <div class="card-title">Posisi Kas Sistem (Indikator Laci)</div>
+        <div id="tjSistemBox" style="font-size:0.9rem;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Hitung Uang Real (Pecahan)</div>
+        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">Isi jumlah lembar/koin tiap pecahan. Total dihitung otomatis.</p>
+        <div class="table-wrap" style="max-height:none;">
+          <table>
+            <thead><tr><th>Pecahan</th><th class="text-right">Jumlah</th><th class="text-right">Subtotal</th></tr></thead>
+            <tbody id="tjPecahanBody"></tbody>
+            <tfoot>
+              <tr>
+                <td><strong>Total Uang Real</strong></td>
+                <td></td>
+                <td class="text-right"><strong id="tjTotalReal">Rp 0</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="tjHasilCard">
+        <div class="card-title">Hasil Pencocokan</div>
+        <div id="tjHasil" style="font-size:0.9rem;"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary btn-sm" type="button" onclick="simpanTutupJurnal()">Simpan Hasil Tutup Jurnal</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="resetPecahan()">Reset Pecahan</button>
+        </div>
+        <div id="tjHistory" style="margin-top:14px;font-size:0.8rem;color:var(--muted);"></div>
+      </div>
+    
+    </section>
     </div>
 
     <!-- KAS -->
@@ -1948,43 +1986,7 @@
       </div>
     </div>
 
-    <!-- TUTUP JURNAL HARIAN -->
-    <div id="page-tutupjurnal" class="page">
-      <div class="section-title">
-        <span>Tutup Jurnal Harian</span>
-        <input type="date" id="tjTanggal" class="form-control" style="width:auto;padding:6px 10px;" onchange="loadTutupJurnal()" />
-      </div>
-      <div class="card">
-        <div class="card-title">Posisi Kas Sistem (Indikator Laci)</div>
-        <div id="tjSistemBox" style="font-size:0.9rem;"></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Hitung Uang Real (Pecahan)</div>
-        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">Isi jumlah lembar/koin tiap pecahan. Total dihitung otomatis.</p>
-        <div class="table-wrap" style="max-height:none;">
-          <table>
-            <thead><tr><th>Pecahan</th><th class="text-right">Jumlah</th><th class="text-right">Subtotal</th></tr></thead>
-            <tbody id="tjPecahanBody"></tbody>
-            <tfoot>
-              <tr>
-                <td><strong>Total Uang Real</strong></td>
-                <td></td>
-                <td class="text-right"><strong id="tjTotalReal">Rp 0</strong></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-      <div class="card" id="tjHasilCard">
-        <div class="card-title">Hasil Pencocokan</div>
-        <div id="tjHasil" style="font-size:0.9rem;"></div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-          <button class="btn btn-primary btn-sm" type="button" onclick="simpanTutupJurnal()">Simpan Hasil Tutup Jurnal</button>
-          <button class="btn btn-outline btn-sm" type="button" onclick="resetPecahan()">Reset Pecahan</button>
-        </div>
-        <div id="tjHistory" style="margin-top:14px;font-size:0.8rem;color:var(--muted);"></div>
-      </div>
-    </div>
+
 
     <div id="page-bonkas" class="page">
       <div class="section-title">
@@ -3049,11 +3051,10 @@
       next.classList.add('active');
 
       if (name === 'dashboard') loadDashboard();
-      if (name === 'transaksi') { loadTransaksi(); loadAccountingWorkbench(); loadBkMasterTable(); loadStokOpname(); }
+      if (name === 'transaksi') { loadTransaksi(); loadAccountingWorkbench(); loadBkMasterTable(); loadStokOpname(); loadTutupJurnal(); }
       if (name === 'kas') loadKasHarian();
       if (name === 'sibuhar') loadSibuhar();
       if (name === 'bonkas') loadBonKas();
-      if (name === 'tutupjurnal') loadTutupJurnal();
       if (name === 'laporan') loadLaporan();
       if (name === 'import') { updateDbInfo(); updateArchiveInfo(); }
       if (name === 'settings') { loadSettingsForm(); updatePinStatusUI(); renderLudjuModuleTable(); initAllRpInputs(document.getElementById('page-settings')); }
@@ -5185,29 +5186,31 @@
       const real = window._tjTotalReal || 0;
       const pecahan = {};
       document.querySelectorAll('.tj-qty').forEach(inp => {
-        const p = inp.dataset.pecahan;
-        const q = parseInt(inp.value, 10) || 0;
+        const p = inp.dataset.pecahan, q = parseInt(inp.value,10) || 0;
         if (q) pecahan[p] = q;
       });
       const rec = {
-        id: 'TJ-' + (sys.tgl || todayStr()),
-        tanggal: sys.tgl || todayStr(),
-        indikator: sys.indikator || 0,
-        kasMasuk: sys.kasMasuk || 0,
-        kasKeluar: sys.kasKeluar || 0,
-        titipan: sys.titipan || 0,
-        uangReal: real,
-        selisih: real - (sys.indikator || 0),
-        pecahan,
-        savedAt: new Date().toISOString()
+        id:'TJ-'+(sys.tgl||todayStr()), tanggal:sys.tgl||todayStr(),
+        indikator:sys.indikator||0, kasMasuk:sys.kasMasuk||0, kasKeluar:sys.kasKeluar||0,
+        titipan:sys.titipan||0, uangReal:real, selisih:real-(sys.indikator||0), pecahan,
+        status:Math.abs(real-(sys.indikator||0))<0.5?'cocok':'selisih', savedAt:new Date().toISOString()
       };
-      if (!settings.tutupJurnal) settings.tutupJurnal = {};
-      settings.tutupJurnal[rec.tanggal] = rec;
-      settings.id = 'app';
-      await put('settings', settings);
-      markDataChanged();
-      toast('Tutup jurnal ' + rec.tanggal + ' disimpan', 'success');
-      loadTutupJurnalHistory();
+      if(!settings.tutupJurnal)settings.tutupJurnal={};
+      const previous=settings.tutupJurnal[rec.tanggal]||null;
+      settings.tutupJurnal[rec.tanggal]=rec;settings.id='app';
+      await new Promise((resolve,reject)=>{
+        let tx;
+        try {
+          const stores=db.objectStoreNames.contains('audit_log')?['settings','audit_log']:['settings'];
+          tx=db.transaction(stores,'readwrite');tx.objectStore('settings').put(settings);
+          if(stores.includes('audit_log'))tx.objectStore('audit_log').add({
+            waktu:rec.savedAt,aksi:previous?'UBAH_TUTUP_JURNAL':'SIMPAN_TUTUP_JURNAL',target_id:rec.id,
+            keterangan:'Kas sistem '+rec.indikator+'; uang real '+rec.uangReal+'; selisih '+rec.selisih
+          });
+          tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Simpan tutup jurnal gagal'));tx.onabort=()=>reject(tx.error||new Error('Simpan tutup jurnal dibatalkan'));
+        }catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}
+      });
+      markDataChanged();toast('Tutup jurnal '+rec.tanggal+' disimpan dengan status '+rec.status,'success');loadTutupJurnalHistory();
     }
 
     function loadTutupJurnalHistory() {
