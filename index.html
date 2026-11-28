@@ -2757,6 +2757,20 @@
                 const bkStore=tx.objectStore('bk_accountability'),bkReq=bkStore.get(current.source_id);
                 bkReq.onsuccess=()=>{if(bkReq.result)bkStore.put({...bkReq.result,status:'posted',posted_at:now,journal_id:id});};
               }
+              if(current.source_type==='reversal'&&current.source_id){
+                const originalReq=headerStore.get(current.source_id);
+                originalReq.onsuccess=()=>{
+                  const original=originalReq.result;if(!original)return;
+                  if(original.source_type==='opening_balance'&&original.source_id){
+                    const versionStore=tx.objectStore('opening_balance_versions'),vr=versionStore.get(original.source_id);
+                    vr.onsuccess=()=>{if(vr.result)versionStore.put({...vr.result,status:'reversed',reversed_at:now,reversal_journal_id:id});};
+                  }
+                  if(original.source_type==='bk_accountability'&&original.source_id){
+                    const bkStore=tx.objectStore('bk_accountability'),br=bkStore.get(original.source_id);
+                    br.onsuccess=()=>{if(br.result)bkStore.put({...br.result,status:'reversed',reversed_at:now,reversal_journal_id:id});};
+                  }
+                };
+              }
               if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'POST_JURNAL',target_id:id,keterangan:'Jurnal diposting; debit/kredit '+checked.debit_total});
             };
           };
