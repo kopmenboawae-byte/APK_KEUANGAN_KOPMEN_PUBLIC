@@ -1632,6 +1632,12 @@
       <section class="card" id="accountingWorkbench" style="margin-top:18px;">
         <div class="section-title"><span>Jurnal Umum & Buku Besar</span><span class="badge badge-warn">Fondasi baru</span></div>
         <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px;">Catat jurnal penyesuaian atau jurnal manual melalui menu Transaksi. Jurnal draft belum memengaruhi laporan. Jurnal posted tidak dapat diedit dan hanya dapat dikoreksi melalui pembalikan.</p>
+        <div class="card" style="margin:12px 0;border-left:4px solid var(--warning);">
+          <div class="card-title">Migrasi Transaksi Historis ke Ledger · Draft Saja</div>
+          <p style="font-size:.78rem;color:var(--muted);">Menyiapkan draft jurnal yang tertaut ke ID transaksi sumber. Tidak ada jurnal yang diposting. Transaksi kredit tanpa alokasi pihak, titipan, transaksi lain-lain yang belum jelas, dan BK tanpa rekening yang cocok akan ditahan. HPP tidak diambil dari laba POS.</p>
+          <button class="btn btn-primary btn-sm" type="button" onclick="prepareLegacyTransactionLedgerDrafts()">Siapkan Draft Jurnal Historis</button>
+          <div id="legacyLedgerMigrationSummary" style="margin-top:10px;font-size:.78rem;color:var(--muted);">Ringkasan migrasi belum dimuat.</div>
+        </div>
         <form id="manualJournalForm" onsubmit="saveManualJournalDraft(event)">
           <div class="grid-2">
             <div class="form-group"><label>Tanggal jurnal *</label><input type="date" id="manualJournalDate" class="form-control" required /></div>
@@ -7462,6 +7468,86 @@
       return '—';
     }
 
+    function buildLegacyTransactionJournalProposal(row,bkRows,accounts) {
+      const hold=reason=>({status:'hold',reason,source_key:row&&row.id!=null?'LEGACY-TRX:'+String(row.id):null,lines:[]});
+      if(!row||row.id==null)return hold('ID transaksi sumber tidak tersedia.');
+      if(!accountingIsValidDate(row.tanggal))return hold('Tanggal sumber tidak valid.');
+      const amount=Number(row.nilai),kind=String(row.jenis||'').trim().toUpperCase(),status=String(row.status||'').trim().toUpperCase();
+      if(!Number.isSafeInteger(amount)||amount<=0)return hold('Nilai harus rupiah bulat positif.');
+      if(!['TUNAI','KREDIT'].includes(status))return hold('Status transaksi tidak dikenal.');
+      const memo=String(row.keterangan||'').trim().slice(0,160);let lines=[];
+      if(kind==='PENJUALAN'){
+        if(status!=='TUNAI')return hold('Penjualan kredit memerlukan alokasi piutang per anggota.');
+        lines=[{account_code:'1101',debit:amount,credit:0,memo:'Penjualan tunai'},{account_code:'4101',debit:0,credit:amount,memo:'Pendapatan penjualan'}];
+      }else if(kind==='PEMBELIAN BARANG'){
+        if(status!=='TUNAI')return hold('Pembelian kredit memerlukan pemasok dan faktur hutang.');
+        lines=[{account_code:'1105',debit:amount,credit:0,memo:'Pembelian persediaan'},{account_code:'1101',debit:0,credit:amount,memo:'Pembayaran pembelian tunai'}];
+      }else if(kind==='BIAYA'){
+        if(status!=='TUNAI')return hold('Status biaya bukan TUNAI.');
+        lines=[{account_code:'6101',debit:amount,credit:0,memo:'Beban operasional · '+memo},{account_code:'1101',debit:0,credit:amount,memo:'Pembayaran biaya'}];
+      }else if(kind==='STOR SIBUHAR'||kind==='TARIK SIBUHAR'){
+        if(status!=='TUNAI')return hold('Status mutasi Sibuhar tidak valid.');
+        lines=kind==='STOR SIBUHAR'?[{account_code:'1107',debit:amount,credit:0,memo:'Setor Sibuhar'},{account_code:'1101',debit:0,credit:amount,memo:'Kas disetor ke Sibuhar'}]:[{account_code:'1101',debit:amount,credit:0,memo:'Tarik Sibuhar'},{account_code:'1107',debit:0,credit:amount,memo:'Pengurangan Sibuhar'}];
+      }else if(kind==='BON KAS'||kind==='PEMBAYARAN BK'){
+        if(status!=='TUNAI')return hold('Mutasi BK harus berstatus TUNAI.');
+        let bk=(bkRows||[]).find(item=>String(item.id)===String(row.bk_rekening_id||''))||null;
+        const parsed=parseBkKeterangan(row.keterangan||'');
+        if(bk&&parsed&&normNba(bk.nba)!==parsed.key)return hold('NBA keterangan tidak cocok dengan rekening BK tertaut.');
+        if(!bk&&parsed){const matches=bkRows.filter(item=>normNba(item.nba)===parsed.key);if(matches.length===1)bk=matches[0];else return hold(matches.length?'NBA cocok ke lebih dari satu rekening BK.':'NBA tidak ditemukan di master BK.');}
+        if(!bk)return hold('Rekening BK belum dipetakan secara unik.');
+        lines=kind==='BON KAS'?[{account_code:'1106',bk_rekening_id:bk.id,debit:amount,credit:0,memo:'Uang muka BK '+bk.nba},{account_code:'1101',debit:0,credit:amount,memo:'Kas diserahkan ke pemegang BK'}]:[{account_code:'1101',debit:amount,credit:0,memo:'Pembayaran BK'},{account_code:'1106',bk_rekening_id:bk.id,debit:0,credit:amount,memo:'Pengurangan uang muka BK '+bk.nba}];
+      }else{
+        const reasons={'PEMBAYARAN BON':'Perlu alokasi piutang anggota/faktur.','PELUNASAN BARANG':'Perlu pemetaan pemasok dan faktur.','TITIPAN KAS':'Klasifikasi kewajiban titipan belum diverifikasi.','PENERIMAAN LAIN-LAIN':'Substansi penerimaan harus diklasifikasikan.','PENGELUARAN LAIN-LAIN':'Substansi pengeluaran harus diklasifikasikan.'};
+        return hold(reasons[kind]||'Jenis transaksi belum memiliki aturan posting historis yang disetujui.');
+      }
+      const map=new Map((accounts||[]).map(item=>[String(item.code),item]));
+      const missing=[...new Set(lines.map(line=>line.account_code))].filter(code=>{const a=map.get(code);return !a||a.active===false||a.classification_status==='needs_review';});
+      if(missing.length)return hold('Akun belum aktif/terverifikasi: '+missing.join(', ')+'.');
+      return{status:'ready',source_key:'LEGACY-TRX:'+String(row.id),source_type:'legacy_transaction',source_id:String(row.id),tanggal:row.tanggal,description:'Migrasi '+kind+' '+row.tanggal,notes:'Sumber '+row.id+'; batch '+(row.import_batch_id||'legacy')+'; baris '+(row.import_source_row||row.source_row||'—')+'. HPP tidak dijurnal dari laba POS.',lines};
+    }
+
+    async function loadLegacyLedgerMigrationStatus(){
+      const host=document.getElementById('legacyLedgerMigrationSummary');if(!host)return;
+      try{
+        const [all,journals,accounts,bkRows]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('chart_accounts'),getAllBkRekening()]);
+        const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row));
+        const mapped=new Set(journals.filter(j=>j.source_type==='legacy_transaction').map(j=>String(j.source_id)));
+        let ready=0,held=0;const reasons={};
+        legacy.forEach(r=>{if(mapped.has(String(r.id)))return;const p=buildLegacyTransactionJournalProposal(r,bkRows,accounts);if(p.status==='ready')ready++;else{held++;reasons[p.reason]=(reasons[p.reason]||0)+1;}});
+        const draft=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='draft').length;
+        const posted=journals.filter(j=>j.source_type==='legacy_transaction'&&j.status==='posted').length;
+        host.innerHTML='<strong>Sumber historis:</strong> '+legacy.length+' · <strong>Sudah berjurnal:</strong> '+mapped.size+' · <strong>Siap draft:</strong> '+ready+' · <strong>Ditahan:</strong> '+held+'<div>Draft: '+draft+' · Posted: '+posted+' (tidak dibuat oleh fitur ini)</div>'+
+          (held?'<details><summary>Lihat alasan penahanan</summary><ul>'+Object.entries(reasons).map(([k,v])=>'<li>'+accountingEscapeHtml(k)+' — '+v+'</li>').join('')+'</ul></details>':'');
+      }catch(e){host.textContent='Gagal memuat status migrasi: '+e.message;}
+    }
+
+    async function prepareLegacyTransactionLedgerDrafts(){
+      if(!confirm('Siapkan draft jurnal untuk transaksi historis yang memenuhi aturan? Tidak ada jurnal yang diposting dan transaksi sumber tidak diubah.'))return;
+      const host=document.getElementById('legacyLedgerMigrationSummary');if(host)host.textContent='Menyiapkan draft jurnal…';
+      try{
+        await ensureAccountingFoundation();
+        const [all,journals,history,bkRows,accounts]=await Promise.all([getAccountingTransactions(),getAll('journal_entries'),getAll('change_history'),getAllBkRekening(),getAll('chart_accounts')]);
+        const legacy=all.filter(r=>r&&(r.import_source||r.import_batch_id||r.import_source_row));
+        const existing=new Set(journals.filter(j=>j.source_type==='legacy_transaction').map(j=>String(j.source_id)));
+        let created=0,already=0,held=0,failed=0;
+        for(let i=0;i<legacy.length;i++){
+          const row=legacy[i],id=String(row.id);if(existing.has(id)){already++;continue;}
+          const p=buildLegacyTransactionJournalProposal(row,bkRows,accounts);
+          if(p.status!=='ready'){
+            held++;if(!history.some(h=>h.target_type==='legacy_transaction'&&String(h.target_id)===id&&h.action==='LEGACY_LEDGER_HELD'&&h.reason===p.reason))await put('change_history',{target_type:'legacy_transaction',target_id:id,changed_at:new Date().toISOString(),action:'LEGACY_LEDGER_HELD',reason:p.reason,source_key:p.source_key,reviewer:'system-rule'});
+          }else{
+            try{const result=await createJournalDraft({tanggal:p.tanggal,description:p.description,source_type:p.source_type,source_id:p.source_id,source_key:p.source_key,notes:p.notes,lines:p.lines});
+              if(result.duplicate)already++;else{created++;existing.add(id);await put('change_history',{target_type:'legacy_transaction',target_id:id,changed_at:new Date().toISOString(),action:'LEGACY_LEDGER_DRAFT_CREATED',source_key:p.source_key,journal_id:result.id,reviewer:'system-rule',posting_status:'draft'});}
+            }catch(error){failed++;await put('change_history',{target_type:'legacy_transaction',target_id:id,changed_at:new Date().toISOString(),action:'LEGACY_LEDGER_HELD',reason:'Draft gagal: '+error.message,source_key:p.source_key,reviewer:'system-rule'});}
+          }
+          if(host&&((i+1)%25===0||i===legacy.length-1))host.textContent='Diproses '+(i+1)+'/'+legacy.length+' · '+created+' draft · '+held+' ditahan · '+failed+' gagal.';
+        }
+        if(created)markDataChanged();
+        await loadAccountingWorkbench();
+        toast('Migrasi draft selesai: '+created+' draft baru, '+already+' sudah ada, '+held+' ditahan, '+failed+' gagal. Tidak ada jurnal diposting.',created?'success':'info');
+      }catch(e){if(host)host.textContent='Migrasi gagal: '+e.message;toast('Migrasi gagal: '+e.message,'error');}
+    }
+
     async function loadAccountingWorkbench() {
       const host = document.getElementById('accountingWorkbench');
       if (!host) return;
@@ -7483,6 +7569,7 @@
         entries.sort((a,b)=>String(b.tanggal||'').localeCompare(String(a.tanggal||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
         const body = document.getElementById('journalEntriesBody');
         if (body) body.innerHTML = entries.slice(0,30).map(entry => '<tr><td>' + accountingEscapeHtml(entry.tanggal) + '</td><td>' + accountingEscapeHtml(entry.description) + '<br><small>' + accountingEscapeHtml(entry.id) + '</small></td><td>' + accountingEscapeHtml(entry.status) + '</td><td class="text-right">' + formatRp(entry.debit_total) + '</td><td class="text-right">' + formatRp(entry.credit_total) + '</td><td>' + journalActionHtml(entry) + '</td></tr>').join('') || '<tr><td colspan="6" class="empty">Belum ada jurnal.</td></tr>';
+        await loadLegacyLedgerMigrationStatus();
         await loadTrialBalanceView();
         if (glSelect && glSelect.value) await loadGeneralLedgerView();
       } catch (e) {
