@@ -1924,6 +1924,7 @@
         </div>
       </div>
       <div class="card" style="border-left:4px solid var(--primary);"><strong style="font-size:.86rem;">Cara menggunakan laporan</strong><ol style="padding-left:18px;margin:6px 0 0;font-size:.8rem;color:var(--muted);"><li>Tentukan tanggal Dari dan Sampai.</li><li>Pilih jenis laporan: Neraca, Laba Rugi, Arus Kas, atau Penjelasan.</li><li>Tekan Tampilkan Laporan untuk memperbarui hasil sesuai periode.</li></ol><p style="font-size:.78rem;color:var(--muted);margin:7px 0 0;">Periksa peringatan pada laporan. HPP yang memakai snapshot Stok Opname berstatus Belum Diverifikasi tetap merupakan angka referensi sementara, bukan hasil stok fisik yang telah disahkan.</p></div>
+      <div id="ledgerReportReadiness" style="margin:10px 0;"></div>
       <div class="tabs">
         <div class="tab active" data-lap="neraca" onclick="switchLap('neraca')">Neraca</div>
         <div class="tab" data-lap="labarugi" onclick="switchLap('labarugi')">Laba Rugi</div>
@@ -4064,6 +4065,100 @@
       return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1)).toISOString().slice(0, 10);
     }
 
+    async function calcLedgerFinancials(from,to) {
+      const start=from||'0001-01-01',end=to||'9999-12-31';
+      if(!accountingIsValidDate(start)||!accountingIsValidDate(end)||start>end)throw new Error('Rentang tanggal ledger tidak valid.');
+      const [accounts,allLines,entries,legacyRows,openingVersions]=await Promise.all([
+        getAll('chart_accounts'),getAll('journal_lines'),getAll('journal_entries'),getAccountingTransactions(),getAll('opening_balance_versions')
+      ]);
+      const postedLines=allLines.filter(line=>line.status==='posted'&&line.tanggal&&line.tanggal<=end);
+      const periodLines=postedLines.filter(line=>line.tanggal>=start);
+      const yearStart=end.slice(0,4)+'-01-01';
+      const ytdLines=postedLines.filter(line=>line.tanggal>=yearStart);
+      const totalsFor=rows=>{
+        const map=new Map();
+        rows.forEach(line=>{const item=map.get(String(line.account_code))||{debit:0,credit:0};item.debit+=Number(line.debit)||0;item.credit+=Number(line.credit)||0;map.set(String(line.account_code),item);});
+        return map;
+      };
+      const netFor=(account,totals)=>{
+        const value=totals.get(String(account.code))||{debit:0,credit:0};
+        return account.normal_balance==='credit'?value.credit-value.debit:value.debit-value.credit;
+      };
+      const trialTotals=totalsFor(postedLines);
+      const trialRows=accounts.map(account=>{
+        const total=trialTotals.get(String(account.code))||{debit:0,credit:0},net=netFor(account,trialTotals);
+        return{account_code:account.code,account_name:account.name,total_debit:total.debit,total_credit:total.credit,
+          debit_balance:Math.max(0,account.normal_balance==='credit'?-net:net),
+          credit_balance:Math.max(0,account.normal_balance==='credit'?net:-net)};
+      }).filter(row=>row.total_debit||row.total_credit);
+      const trialDebit=trialRows.reduce((n,row)=>n+row.debit_balance,0),trialCredit=trialRows.reduce((n,row)=>n+row.credit_balance,0);
+      const pnlFor=rows=>{
+        const totals=totalsFor(rows);
+        const sumType=type=>accounts.filter(a=>a.type===type).reduce((n,a)=>n+netFor(a,totals),0);
+        const revenue=sumType('revenue'),contraRevenue=sumType('contra_revenue'),expenses=sumType('expense');
+        const cogs=accounts.filter(a=>String(a.code)==='5101').reduce((n,a)=>n+netFor(a,totals),0);
+        return{revenue,contra_revenue:contraRevenue,cogs,operating_expenses:expenses-cogs,gross_profit:revenue-contraRevenue-cogs,net_profit:revenue-contraRevenue-expenses};
+      };
+      const periodPnl=pnlFor(periodLines),ytdPnl=pnlFor(ytdLines),balanceTotals=trialTotals;
+      let assets=0,liabilities=0,equity=0;
+      accounts.forEach(account=>{
+        const net=netFor(account,balanceTotals);
+        if(account.type==='asset')assets+=net;
+        else if(account.type==='contra_asset')assets-=net;
+        else if(account.type==='liability')liabilities+=net;
+        else if(account.type==='equity')equity+=net;
+      });
+      const cashCodes=new Set(['1101','1102','1103']);
+      const cashLines=periodLines.filter(line=>cashCodes.has(String(line.account_code)));
+      const cashInflow=cashLines.reduce((n,line)=>n+(Number(line.debit)||0),0);
+      const cashOutflow=cashLines.reduce((n,line)=>n+(Number(line.credit)||0),0);
+      const postedEntries=entries.filter(entry=>entry.status==='posted'&&entry.tanggal<=end);
+      const draftEntries=entries.filter(entry=>entry.status==='draft'&&entry.tanggal<=end);
+      const postedLegacyIds=new Set(entries.filter(entry=>entry.source_type==='legacy_transaction'&&entry.status==='posted'&&entry.tanggal<=end).map(entry=>String(entry.source_id)));
+      const legacy=legacyRows.filter(row=>row&&(row.import_source||row.import_batch_id||row.import_source_row)&&row.tanggal&&row.tanggal<=end);
+      const legacyPostedCount=legacy.filter(row=>postedLegacyIds.has(String(row.id))).length;
+      const openingBalancePosted=entries.some(entry=>entry.source_type==='opening_balance'&&entry.status==='posted'&&entry.tanggal<=end)||openingVersions.some(version=>version.status==='posted'&&version.effective_date<=end);
+      const trialDifference=trialDebit-trialCredit,balanceDifference=assets-(liabilities+equity+ytdPnl.net_profit);
+      const trialBalanced=Math.abs(trialDifference)<=1,balanceBalanced=Math.abs(balanceDifference)<=1;
+      const inventoryReconciled=settings.ledgerInventoryReconciled===true;
+      const subledgerReconciled=settings.ledgerSubledgerReconciled===true;
+      const reportSignoff=settings.ledgerReportsApproved===true;
+      const reasons=[];
+      if(!openingBalancePosted)reasons.push('Jurnal saldo pembuka belum diposting.');
+      if(!legacy.length||legacyPostedCount!==legacy.length)reasons.push('Transaksi historis belum seluruhnya memiliki jurnal posted ('+legacyPostedCount+'/'+legacy.length+').');
+      if(!trialBalanced)reasons.push('Neraca saldo ledger belum seimbang.');
+      if(!balanceBalanced)reasons.push('Persamaan neraca ledger belum seimbang.');
+      if(!inventoryReconciled)reasons.push('Rekonsiliasi persediaan dan HPP belum disahkan.');
+      if(!subledgerReconciled)reasons.push('Rekonsiliasi subledger anggota/pemasok/BK belum disahkan.');
+      if(!reportSignoff)reasons.push('Belum ada persetujuan sign-off laporan ledger.');
+      if(!postedEntries.length)reasons.push('Belum ada jurnal posted.');
+      const ready=openingBalancePosted&&legacy.length>0&&legacyPostedCount===legacy.length&&trialBalanced&&balanceBalanced&&inventoryReconciled&&subledgerReconciled&&reportSignoff&&postedEntries.length>0;
+      return{
+        from:start,to:end,posted_journal_count:postedEntries.length,draft_journal_count:draftEntries.length,
+        trial_balance:{rows:trialRows,total_debit:trialDebit,total_credit:trialCredit,difference:trialDifference,balanced:trialBalanced},
+        income_statement:periodPnl,balance_sheet:{assets,liabilities,equity,current_result:ytdPnl.net_profit,total_liabilities_equity:liabilities+equity+ytdPnl.net_profit,difference:balanceDifference,balanced:balanceBalanced},
+        cash_flow:{inflow:cashInflow,outflow:cashOutflow,net:cashInflow-cashOutflow},
+        readiness:{ready,opening_balance_posted:openingBalancePosted,legacy_source_count:legacy.length,legacy_posted_count:legacyPostedCount,
+          inventory_reconciled:inventoryReconciled,subledger_reconciled:subledgerReconciled,report_signoff:reportSignoff,reasons}
+      };
+    }
+
+    async function renderLedgerReportReadiness(from,to) {
+      const host=document.getElementById('ledgerReportReadiness');if(!host)return;
+      try{
+        const result=await calcLedgerFinancials(from,to),r=result.readiness;
+        const status=r.ready?'Siap setelah sign-off':'Belum siap sebagai basis laporan resmi';
+        host.innerHTML='<div class="card" style="border-left:4px solid '+(r.ready?'var(--success)':'var(--warning)')+';">'+
+          '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><strong>Pratinjau Ledger · Posted Journals Only</strong><strong style="font-size:.78rem;color:'+(r.ready?'var(--success)':'var(--warning)')+';">'+status+'</strong></div>'+
+          '<p style="font-size:.74rem;color:var(--muted);margin:5px 0;">Laporan utama masih menggunakan basis transaksi legacy. Pratinjau ini hanya menghitung jurnal berstatus posted; draft tidak memengaruhi saldo.</p>'+
+          '<div style="font-size:.78rem;">Jurnal posted: <strong>'+result.posted_journal_count+'</strong> · Draft: <strong>'+result.draft_journal_count+'</strong> · Transaksi historis posted: <strong>'+r.legacy_posted_count+'/'+r.legacy_source_count+'</strong></div>'+
+          '<div style="font-size:.78rem;margin-top:4px;">Trial balance: selisih <strong>'+formatRp(result.trial_balance.difference)+'</strong> · Neraca: selisih <strong>'+formatRp(result.balance_sheet.difference)+'</strong></div>'+
+          '<div style="font-size:.78rem;margin-top:4px;">Laba bersih ledger periode: <strong>'+formatRp(result.income_statement.net_profit)+'</strong> · Arus kas bersih: <strong>'+formatRp(result.cash_flow.net)+'</strong></div>'+
+          (r.reasons.length?'<details style="margin-top:7px;"><summary>Prasyarat yang belum terpenuhi ('+r.reasons.length+')</summary><ul style="font-size:.74rem;margin:5px 0 0;padding-left:18px;">'+r.reasons.map(reason=>'<li>'+accountingEscapeHtml(reason)+'</li>').join('')+'</ul></details>':'<p style="font-size:.74rem;color:var(--success);margin:6px 0 0;">Semua readiness gate terpenuhi. Laporan legacy tetap dipertahankan sampai pergantian basis disetujui.</p>')+
+          '</div>';
+      }catch(error){host.textContent='Pratinjau ledger gagal dimuat: '+error.message;}
+    }
+
     async function calcFinancials(from, to) {
       const all = await getAccountingTransactions();
       const inPeriod = all.filter(r => {
@@ -4452,6 +4547,7 @@
         toast('Periksa kembali periode laporan.', 'error');
         return;
       }
+      await renderLedgerReportReadiness(from,to);
       const f = await calcFinancials(from, to);
       const built = buildLaporanRows(f, currentLap);
       const title = reportTitle(currentLap);
