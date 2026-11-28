@@ -43,6 +43,17 @@ assert.equal(isValidDate('2026-13-01'), false);
 assert.equal(isValidDate('28-11-2026'), false);
 assert.ok(html.includes("index('account_date').openCursor"), 'General Ledger query should use the compound index cursor');
 assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should aggregate through a cursor');
+assert.ok(html.includes('id="accountingWorkbench"'), 'Journal workbench must remain under Transactions');
+assert.ok(html.includes('id="bkMasterTable"'), 'BK administration table must exist');
+assert.ok(html.includes('id="settings-stok"'), 'Stocktake administration must exist');
+assert.ok(html.includes("status: 'legacy_unposted'"), 'Opening balance snapshots must remain unposted');
+assert.ok(html.includes('VERSI_SALDO_AWAL_BK'), 'BK opening changes must be audited');
+assert.ok(!html.includes('id="setSaldoBkDetail"'), 'Duplicate BK opening input in Settings must stay removed');
+assert.ok(!html.includes('settings.saldoAwalPiutang = total'), 'Receivable breakdown must not overwrite opening receivables');
+const syncStart = html.indexOf('async function syncBkTotalToSettings');
+const syncEnd = html.indexOf('async function seedBkFromDefault', syncStart);
+assert.ok(syncStart >= 0 && syncEnd > syncStart);
+assert.ok(!html.slice(syncStart, syncEnd).includes("put('settings'"), 'BK total sync must not silently overwrite Settings');
 
 
 const accounts = [
@@ -98,4 +109,4 @@ assert.throws(() => validate([
 
 assert.throws(() => validate([], accounts), /sedikitnya dua baris/);
 
-console.log('Ledger tests passed: 13 validation cases plus indexed-cursor guards.');
+console.log('Ledger tests passed: 13 validation/date cases plus workbench and accounting-safety guards.');
