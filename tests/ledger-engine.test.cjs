@@ -43,6 +43,11 @@ assert.equal(isValidDate('2026-13-01'), false);
 assert.equal(isValidDate('28-11-2026'), false);
 assert.ok(html.includes("index('account_date').openCursor"), 'General Ledger query should use the compound index cursor');
 assert.ok(html.includes("index('tanggal').openCursor"), 'Trial balance should aggregate through a cursor');
+assert.ok(html.includes("index('bk_account_date').openCursor"), 'BK subledger should query by holder and date');
+assert.ok(html.includes('saveBkAccountabilityDraft'), 'BK advance, return and accountability workflow must exist');
+assert.ok(html.includes('bk_accountability_record'), 'BK journal and subledger record must be linked');
+assert.ok(html.includes('status:\'posted\',posted_at:now,journal_id:id'), 'Posting must update BK subledger status');
+
 assert.ok(html.includes('id="accountingWorkbench"'), 'Journal workbench must remain under Transactions');
 assert.ok(html.includes('id="bkMasterTable"'), 'BK administration table must exist');
 assert.ok(html.includes('id="bkAdminSection"'), 'BK opening administration must have a direct section anchor');
@@ -72,7 +77,8 @@ const accounts = [
   { code: '1101', name: 'Kas Tunai', active: true, classification_status: 'active' },
   { code: '4101', name: 'Penjualan Barang', active: true, classification_status: 'active' },
   { code: '3101', name: 'Simpanan Pokok', active: true, classification_status: 'needs_review' },
-  { code: '1102', name: 'Bank', active: false, classification_status: 'active' }
+  { code: '1102', name: 'Bank', active: false, classification_status: 'active' },
+  { code: '1106', name: 'Uang Muka BK', active: true, classification_status: 'active' }
 ];
 
 const valid = validate([
@@ -120,5 +126,14 @@ assert.throws(() => validate([
 ], accounts), /belum diverifikasi/);
 
 assert.throws(() => validate([], accounts), /sedikitnya dua baris/);
+const bkValid = validate([
+  { account_code: '1106', bk_rekening_id: 'BK-TEST-1', debit: 500, credit: 0 },
+  { account_code: '1101', debit: 0, credit: 500 }
+], accounts);
+assert.equal(bkValid.lines[0].bk_rekening_id, 'BK-TEST-1');
+assert.throws(() => validate([
+  { account_code: '1106', debit: 500, credit: 0 },
+  { account_code: '1101', debit: 0, credit: 500 }
+], accounts), /Pilih pemegang Bon Kas/);
 
-console.log('Ledger tests passed: 13 validation/date cases plus workbench and accounting-safety guards.');
+console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger and safety guards.');
