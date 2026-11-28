@@ -53,7 +53,7 @@ const calc=vm.runInNewContext('('+source+')',ctx);
  assert.ok(blocked.readiness.reasons.some(x=>x.includes('1/2')));
  assert.equal(blocked.income_statement.net_profit,400,'draft journals must not affect ledger report');
  const page=html.slice(html.indexOf('async function loadLaporan()'),html.indexOf('async function exportLaporanExcel()'));
- assert.ok(page.includes('renderLedgerReportReadiness(from,to)')&&page.includes('calcFinancials(from, to)'),'legacy reports must remain alongside ledger preview');
+ assert.ok(page.includes('renderLedgerReportReadiness(from,to,ledgerResult)')&&page.includes('calcFinancials(from, to)'),'legacy reports must remain alongside ledger preview');
 
  const builderStart=html.indexOf('function buildLedgerLaporanRows('),builderEnd=html.indexOf('async function loadLaporan(',builderStart);
  assert.ok(builderStart>=0&&builderEnd>builderStart,'ledger report row builder missing');
