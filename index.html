@@ -2021,6 +2021,12 @@
           Nilai bawaan lama tidak otomatis merupakan saldo resmi. Jangan gunakan Neraca atau Laba Rugi
           sebagai laporan final sebelum saldo awal dan rekening Bon Kas direkonsiliasi.
         </p>
+        <div class="grid-2" style="margin-top:12px;">
+          <div class="form-group"><label>Tanggal efektif perubahan saldo awal</label><input type="date" id="openingBalanceEffectiveDate" class="form-control" /></div>
+          <div class="form-group"><label>Alasan perubahan saldo awal *</label><textarea id="openingBalanceChangeReason" class="form-control" rows="2" placeholder="Contoh: koreksi berdasarkan rekonsiliasi buku kas dan bukti fisik"></textarea></div>
+        </div>
+        <p style="font-size:.74rem;color:var(--muted);">Jika salah satu saldo berubah, tanggal dan alasan wajib diisi. Perubahan akan disimpan sebagai versi referensi legacy dan belum menjadi jurnal pembukaan.</p>
+        <div id="openingBalanceHistory" style="font-size:.78rem;margin-top:8px;"></div>
       </div>
       <div class="card settings-anchor" id="settings-keamanan">
         <div class="card-title">Keamanan PIN + Sandi <span class="module-tag">Modul</span></div>
@@ -3117,6 +3123,7 @@
     }
 
     async function saveSettings() {
+      const previousSettings = { ...settings };
       settings.namaUsaha = document.getElementById('setNamaUsaha').value || settings.namaUsaha;
       settings.periode = document.getElementById('setPeriode').value || '2026';
       settings.saldoAwalKas = parseAngkaID(document.getElementById('setSaldoKas').value);
@@ -3147,10 +3154,79 @@
       settings.saldoAwalSHU = parseAngkaID((document.getElementById('setSaldoSHU')||{}).value);
       settings.saldoAwalModal = parseAngkaID(document.getElementById('setSaldoModal').value);
       settings.id = 'app';
-      await put('settings', settings);
+      const openingKeys = [
+        'saldoAwalKas','saldoAwalSibuhar','saldoAwalPersediaan','saldoAwalPiutang','saldoAwalPenerimaanYMH',
+        'saldoAwalInventaris','saldoAwalPenyusutanInventaris','saldoBkDetail','saldoAwalBonKas','saldoAwalPinjamanKSP',
+        'saldoAwalTitipan','saldoAwalSimpananPokok','saldoAwalSimpananWajib','saldoAwalHutangBarang','saldoAwalCadangan',
+        'saldoAwalDanaPKKSP','saldoAwalModalPenyertaKB','saldoAwalDonasiKB','saldoAwalSHU','saldoAwalModal'
+      ];
+      const changedKeys = openingKeys.filter(key => {
+        const before = previousSettings[key] == null ? '' : String(previousSettings[key]);
+        const after = settings[key] == null ? '' : String(settings[key]);
+        return before !== after;
+      });
+      let openingVersion = null;
+      if (changedKeys.length) {
+        const effectiveDate = (document.getElementById('openingBalanceEffectiveDate') || {}).value || '';
+        const reason = ((document.getElementById('openingBalanceChangeReason') || {}).value || '').trim();
+        if (!accountingIsValidDate(effectiveDate) || !reason) {
+          settings = previousSettings;
+          toast('Saldo awal berubah. Isi tanggal efektif dan alasan perubahan sebelum menyimpan.', 'error');
+          loadSettingsForm();
+          return;
+        }
+        const versions = await getAll('opening_balance_versions');
+        const previousVersion = versions.filter(v => v.status !== 'superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0] || null;
+        const snapshot = values => Object.fromEntries(openingKeys.map(key => [key, values[key] == null ? 0 : values[key]]));
+        openingVersion = {
+          id: accountingId('OPEN-LEGACY'), effective_date: effectiveDate, reason,
+          status: 'legacy_unposted', source_type: 'legacy_settings',
+          previous_version_id: previousVersion ? previousVersion.id : null,
+          changed_fields: changedKeys, previous_balances: snapshot(previousSettings),
+          balances: snapshot(settings), created_at: new Date().toISOString(), created_by: 'local-user'
+        };
+      }
+      await new Promise((resolve,reject) => {
+        let tx;
+        try {
+          const stores = ['settings'];
+          if (openingVersion) stores.push('opening_balance_versions');
+          if (openingVersion && db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
+          tx = db.transaction(stores,'readwrite');
+          tx.objectStore('settings').put(settings);
+          if (openingVersion) {
+            tx.objectStore('opening_balance_versions').put(openingVersion);
+            if (stores.includes('audit_log')) tx.objectStore('audit_log').add({
+              waktu: openingVersion.created_at, aksi: 'VERSI_SALDO_AWAL_LEGACY',
+              target_id: openingVersion.id, keterangan: openingVersion.reason + ' · ' + changedKeys.join(', ')
+            });
+          }
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('Penyimpanan pengaturan gagal'));
+          tx.onabort = () => reject(tx.error || new Error('Penyimpanan pengaturan dibatalkan'));
+        } catch(e) { if(tx){try{tx.abort();}catch(_){}} reject(e); }
+      });
+      const reasonInput = document.getElementById('openingBalanceChangeReason');
+      if (reasonInput) reasonInput.value = '';
       markDataChanged();
-      toast('Saldo awal & pengaturan disimpan', 'success');
+      await loadOpeningBalanceHistory();
+      toast(openingVersion ? 'Pengaturan tersimpan dan versi saldo awal dicatat (belum dijurnal).' : 'Pengaturan disimpan', 'success');
       loadDashboard();
+    }
+
+    async function loadOpeningBalanceHistory() {
+      const host = document.getElementById('openingBalanceHistory');
+      if (!host || !db || !db.objectStoreNames.contains('opening_balance_versions')) return;
+      try {
+        const versions = await getAll('opening_balance_versions');
+        versions.sort((a,b)=>String(b.effective_date||'').localeCompare(String(a.effective_date||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+        const esc = accountingEscapeHtml;
+        host.innerHTML = versions.length
+          ? '<strong>Riwayat versi saldo awal</strong><div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Tanggal efektif</th><th>Status</th><th>Alasan</th><th>Perubahan</th></tr></thead><tbody>' +
+            versions.slice(0,8).map(v=>'<tr><td>'+esc(v.effective_date)+'</td><td>'+esc(v.status==='legacy_unposted'?'Legacy · belum dijurnal':v.status)+'</td><td>'+esc(v.reason||'—')+'</td><td>'+esc((v.changed_fields||[]).length+' akun/field')+'</td></tr>').join('') +
+            '</tbody></table></div>'
+          : '<span style="color:var(--muted);">Belum ada versi saldo awal yang tercatat.</span>';
+      } catch(e) { host.textContent = 'Riwayat saldo awal belum dapat dibaca: ' + e.message; }
     }
 
     async function loadStokOpname() {
@@ -3257,7 +3333,12 @@
       Object.keys(rpIds).forEach(id => setRpValue(id, rpIds[id] || 0));
       const bkDetail = document.getElementById('setSaldoBkDetail');
       if (bkDetail) bkDetail.value = settings.saldoBkDetail || '';
+      const effectiveDate = document.getElementById('openingBalanceEffectiveDate');
+      if (effectiveDate && !effectiveDate.value) effectiveDate.value = todayStr();
+      const reason = document.getElementById('openingBalanceChangeReason');
+      if (reason) reason.value = '';
       initAllRpInputs(document.getElementById('page-settings'));
+      loadOpeningBalanceHistory();
     }
 
     // ===================== TRANSAKSI CRUD =====================
