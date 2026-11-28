@@ -1945,6 +1945,8 @@
         <div id="importPreview" style="display:none;margin-top:12px;"></div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="btn btn-primary" id="btnDoImport" style="display:none;" onclick="doImport()">Konfirmasi Import</button>
+          <button class="btn btn-outline" type="button" onclick="loadImportStagingReview()">Review Staging Tersimpan</button>
+          <div id="importStagingReview" style="margin-top:12px;"></div>
           <button class="btn btn-outline" onclick="showPage('dashboard')">Batal</button>
         </div>
       </div>
@@ -5541,6 +5543,7 @@
             const occurrence = (rowOccurrences.get(signature) || 0) + 1;
             rowOccurrences.set(signature, occurrence);
             importedRow.id = makeImportRowId(signature, occurrence);
+            importedRow.source_row = idx + 2;
             importedRow.source_key = signature;
             importedRow._status = statusRow;
             importedRow._msg = msg;
@@ -5607,6 +5610,7 @@
         `;
 
         document.getElementById('btnDoImport').style.display = importRows.length ? 'inline-flex' : 'none';
+        loadImportStagingReview();
         toast(`Ditemukan ${importRows.length} transaksi siap import`, 'success');
 
       } catch (err) {
@@ -5616,69 +5620,159 @@
       }
     }
 
+    async function loadImportStagingReview() {
+      const host = document.getElementById('importStagingReview');
+      if (!host) return;
+      try {
+        const rows = await getAll('import_staging');
+        const pending = rows.filter(row => row && row.status === 'pending_review');
+        const groups = new Map();
+        pending.forEach(row => {
+          const key = String(row.batch_id || 'unknown');
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(row);
+        });
+        const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[ch]);
+        if (!groups.size) {
+          host.innerHTML = '<p style="font-size:.8rem;color:var(--muted);">Tidak ada batch yang menunggu review.</p>';
+          return;
+        }
+        host.innerHTML = '<div class="card-title">Batch menunggu review</div>' + Array.from(groups.entries()).map(([batchId, batch]) => {
+          const valid = batch.filter(row => row._status === 'ok').length;
+          const warnings = batch.length - valid;
+          const total = batch.reduce((sum, row) => sum + (Number(row.nilai) || 0), 0);
+          const first = batch[0] || {};
+          return `<div class="card" style="margin:8px 0;padding:10px;">
+            <strong>${esc(first.source_file_name || 'Workbook historis')}</strong>
+            <div style="font-size:.78rem;color:var(--muted);margin:4px 0;">Batch ${esc(batchId)} · ${batch.length} baris · ${valid} valid · ${warnings} warning · Total nilai ${formatRp(total)}</div>
+            <button class="btn btn-primary btn-sm" type="button" onclick="approveStagedImportBatch('${esc(batchId)}')" ${valid ? '' : 'disabled'}>Setujui dan pindahkan ${valid} baris valid</button>
+            ${warnings ? '<p style="font-size:.75rem;color:var(--warning);margin:6px 0 0;">' + warnings + ' baris warning ditahan dan tidak dipindahkan sampai ditinjau.</p>' : ''}
+          </div>`;
+        }).join('');
+      } catch (error) {
+        host.textContent = 'Gagal memuat staging: ' + error.message;
+      }
+    }
+
+    async function approveStagedImportBatch(batchId) {
+      const id = String(batchId || '');
+      if (!id) return;
+      if (!confirm('Pindahkan hanya baris berstatus valid dari batch ini ke transaksi historis? Baris warning tetap ditahan di staging.')) return;
+      const hasArchive = db.objectStoreNames.contains('transaksi_arsip');
+      const stores = ['transaksi', 'import_staging'];
+      if (hasArchive) stores.push('transaksi_arsip');
+      let inserted = 0, duplicates = 0, held = 0;
+      await new Promise((resolve, reject) => {
+        let tx;
+        try {
+          tx = db.transaction(stores, 'readwrite');
+          const activeReq = tx.objectStore('transaksi').getAll();
+          const archiveReq = hasArchive ? tx.objectStore('transaksi_arsip').getAll() : null;
+          const stageReq = tx.objectStore('import_staging').index('batch_id').getAll(id);
+          let remaining = hasArchive ? 3 : 2;
+          const ready = () => {
+            remaining--;
+            if (remaining) return;
+            const existing = new Set((activeReq.result || []).concat(archiveReq ? archiveReq.result || [] : []).map(row => String(row.id)));
+            const staged = (stageReq.result || []).filter(row => row.status === 'pending_review');
+            staged.forEach(row => {
+              if (row._status !== 'ok') { held++; return; }
+              if (existing.has(String(row.id))) {
+                tx.objectStore('import_staging').put({...row,status:'duplicate',review_status:'duplicate',reviewed_at:new Date().toISOString()});
+                duplicates++;
+                return;
+              }
+              const clean = {...row, import_batch_id:id, import_source_row:row.source_row || null, status_data:'aktif'};
+              delete clean._status;
+              delete clean._msg;
+              delete clean.batch_id;
+              delete clean.review_status;
+              delete clean.reviewed_at;
+              delete clean.committed_at;
+              tx.objectStore('transaksi').add(clean);
+              tx.objectStore('import_staging').put({...row,status:'committed',review_status:'approved',reviewed_at:new Date().toISOString(),committed_at:new Date().toISOString()});
+              existing.add(String(row.id));
+              inserted++;
+            });
+          };
+          activeReq.onsuccess = ready;
+          if (archiveReq) archiveReq.onsuccess = ready;
+          stageReq.onsuccess = ready;
+          [activeReq, stageReq].concat(archiveReq ? [archiveReq] : []).forEach(req => {
+            req.onerror = () => { try { tx.abort(); } catch (_) {} };
+          });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('Pemindahan staging gagal'));
+          tx.onabort = () => reject(tx.error || new Error('Pemindahan staging dibatalkan; tidak ada perubahan yang diterapkan'));
+        } catch (error) {
+          if (tx) { try { tx.abort(); } catch (_) {} }
+          reject(error);
+        }
+      }).catch(error => { throw error; });
+      if (inserted) {
+        markDataChanged();
+        updateDbInfo();
+        loadDashboard();
+      }
+      toast('Review batch selesai: ' + inserted + ' dipindahkan, ' + duplicates + ' duplikat, ' + held + ' warning tetap ditahan.', inserted ? 'success' : 'info');
+      await loadImportStagingReview();
+    }
+
     async function doImport() {
       if (!importRows.length) return;
-      const existing = await getAll('transaksi');
-      const existingIds = new Set(existing.map(r => r.id));
-      // ID yang sudah berada di arsip juga dianggap pernah diimpor.
-      if (db.objectStoreNames.contains('transaksi_arsip')) {
-        const archived = await getAll('transaksi_arsip');
-        archived.forEach(r => existingIds.add(r.id));
+      if (!db.objectStoreNames.contains('import_staging')) {
+        toast('Store import_staging tidak tersedia. Impor dihentikan demi keamanan.', 'error');
+        return;
       }
-      const existingImports = existing.concat(
-        db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : []
-      ).filter(r => r.import_source || r.source_key);
+      const existing = await getAll('transaksi');
+      const archived = db.objectStoreNames.contains('transaksi_arsip') ? await getAll('transaksi_arsip') : [];
+      const staged = await getAll('import_staging');
+      const existingIds = new Set(existing.concat(archived, staged).map(row => String(row.id)));
+      const existingImports = existing.concat(archived).filter(row => row.import_source || row.source_key);
       const stableOccurrences = new Map();
-      existingImports.forEach(r => {
-        const signature = r.source_key || makeImportRowSignature(r);
+      existingImports.forEach(row => {
+        const signature = row.source_key || makeImportRowSignature(row);
         const occurrence = (stableOccurrences.get(signature) || 0) + 1;
         stableOccurrences.set(signature, occurrence);
         existingIds.add(makeImportRowId(signature, occurrence));
       });
-      const pending = importRows.filter(r => !existingIds.has(r.id));
+      const pending = importRows.filter(row => !existingIds.has(String(row.id)));
       const skipped = importRows.length - pending.length;
       if (!pending.length) {
-        toast('Semua baris dari file ini sudah pernah diimpor. Tidak ada data ditambahkan.', 'info');
-        document.getElementById('progressText').textContent = 'Tidak ada transaksi baru';
+        toast('Semua baris sudah berada di transaksi atau staging. Periksa batch review yang tersimpan.', 'info');
         document.getElementById('btnDoImport').style.display = 'none';
+        await loadImportStagingReview();
         return;
       }
-      if (!confirm(`Import ${pending.length} transaksi baru?` +
-        (skipped ? `\n${skipped} baris dilewati karena file yang sama sudah pernah diimpor.` : '') +
-        `\nData lama tidak dihapus (mode Append).`)) return;
-
-      document.getElementById('progressText').textContent = 'Menyimpan transaksi secara atomik...';
-      document.getElementById('progressFill').style.width = '10%';
-      try {
-        await new Promise((resolve, reject) => {
-          let tx;
-          try {
-            tx = db.transaction('transaksi', 'readwrite');
-            const store = tx.objectStore('transaksi');
-            pending.forEach((row, i) => {
-              const clean = { ...row };
-              delete clean._status;
-              delete clean._msg;
-              store.add(clean);
-              if (i % 50 === 0) document.getElementById('progressFill').style.width = (10 + (i / pending.length) * 80) + '%';
-            });
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error || new Error('Penyimpanan batch gagal'));
-            tx.onabort = () => reject(tx.error || new Error('Impor dibatalkan database'));
-          } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } reject(e); }
-        });
-        document.getElementById('progressFill').style.width = '100%';
-        document.getElementById('progressText').textContent = `Berhasil import ${pending.length} transaksi · ${skipped} duplikat dilewati`;
-        markDataChanged();
-        toast(`Import selesai: ${pending.length} baru, ${skipped} dilewati`, 'success');
-        document.getElementById('btnDoImport').style.display = 'none';
-        updateDbInfo();
-        loadDashboard();
-      } catch (err) {
-        console.error('Import gagal:', err);
-        document.getElementById('progressText').textContent = 'Import gagal: ' + err.message;
-        toast('Import gagal; batch transaksi tidak diterapkan: ' + err.message, 'error');
-      }
+      const valid = pending.filter(row => row._status === 'ok').length;
+      const warnings = pending.length - valid;
+      if (!confirm('Simpan ' + pending.length + ' baris ke staging untuk review? ' + valid + ' valid, ' + warnings + ' warning akan ditahan. ' + skipped + ' duplikat dilewati. Belum ada transaksi yang dipindahkan.')) return;
+      const batchId = accountingId('IMP-BATCH');
+      const now = new Date().toISOString();
+      await new Promise((resolve, reject) => {
+        let tx;
+        try {
+          tx = db.transaction('import_staging', 'readwrite');
+          const store = tx.objectStore('import_staging');
+          pending.forEach(row => {
+            const stagedRow = {...row,batch_id:batchId,status:'pending_review',review_status:row._status,source_row:row.source_row || null,staged_at:now};
+            store.add(stagedRow);
+          });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('Penyimpanan staging gagal'));
+          tx.onabort = () => reject(tx.error || new Error('Penyimpanan staging dibatalkan'));
+        } catch (error) {
+          if (tx) { try { tx.abort(); } catch (_) {} }
+          reject(error);
+        }
+      });
+      document.getElementById('progressText').textContent = 'Batch tersimpan di staging; belum ada transaksi yang dipindahkan.';
+      document.getElementById('btnDoImport').style.display = 'none';
+      markDataChanged();
+      toast('Batch staging tersimpan. Tinjau batch sebelum memindahkan transaksi.', 'success');
+      await loadImportStagingReview();
     }
 
     // ===================== BACKUP / RESTORE / RESET + FOLDER BACKUP =====================
