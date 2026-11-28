@@ -6505,22 +6505,99 @@
       const list = await getAllBkRekening();
       list.sort((a,b) => (a.nba||'').localeCompare(b.nba||''));
       const tbody = document.getElementById('bkMasterTable');
-      if (!tbody) return;
-      if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">Belum ada rekening. Klik + Tambah Rekening atau Isi 24 Rekening Sumber.</td></tr>';
-        return;
+      if (tbody) {
+        tbody.innerHTML = list.length ? list.map(r => '<tr><td>'+accountingEscapeHtml(r.nba)+'</td><td>'+accountingEscapeHtml(r.nama)+'</td><td class="text-right">'+formatRp(r.saldo_awal||0)+'</td><td><button class="btn btn-outline btn-sm" onclick="editBkRekening(\''+accountingEscapeHtml(r.id)+'\')">Edit</button> <button class="btn btn-outline btn-sm" onclick="deleteBkRekening(\''+accountingEscapeHtml(r.id)+'\')">✕</button></td></tr>').join('') : '<tr><td colspan="4" class="empty">Belum ada rekening. Klik + Tambah Rekening atau Isi 24 Rekening Sumber.</td></tr>';
       }
-      tbody.innerHTML = list.map(r => `
-        <tr>
-          <td>${r.nba}</td>
-          <td>${r.nama}</td>
-          <td class="text-right">${formatRp(r.saldo_awal||0)}</td>
-          <td>
-            <button class="btn btn-outline btn-sm" onclick="editBkRekening('${r.id}')">Edit</button>
-            <button class="btn btn-outline btn-sm" onclick="deleteBkRekening('${r.id}')">✕</button>
-          </td>
-        </tr>
-      `).join('');
+      _bkRekeningAccounts = list;
+      refreshJournalBkHolderOptions();
+      const bkDate = document.getElementById('bkAccDate'); if (bkDate && !bkDate.value) bkDate.value = todayStr();
+      const holder = document.getElementById('bkAccHolder');
+      if (holder) {
+        const selected = holder.value;
+        holder.innerHTML = '<option value="">Pilih pemegang</option>' + list.map(r=>'<option value="'+accountingEscapeHtml(r.id)+'">'+accountingEscapeHtml(r.nba+' — '+r.nama)+'</option>').join('');
+        if(selected)holder.value=selected;
+      }
+      const expense = document.getElementById('bkAccExpenseAccount');
+      if (expense) {
+        const selected = expense.value, accounts = await getAll('chart_accounts');
+        expense.innerHTML = '<option value="">Pilih akun beban</option>' + accounts.filter(a=>String(a.code).startsWith('61')).map(a=>'<option value="'+accountingEscapeHtml(a.code)+'"'+(a.active===false||a.classification_status==='needs_review'?' disabled':'')+'>'+accountingEscapeHtml(a.code+' — '+a.name)+'</option>').join('');
+        if(selected)expense.value=selected;
+      }
+      await loadBkSubledgerSummary();
+      await loadBkAccountabilityHistory();
+      onBkAccountabilityKindChange();
+    }
+
+    async function loadBkSubledgerSummary() {
+      const body=document.getElementById('bkSubledgerSummary');if(!body)return;
+      const list=await getAllBkRekening();
+      if(!list.length){body.innerHTML='<tr><td colspan="5" class="empty">Belum ada pemegang BK.</td></tr>';return;}
+      const rows=[];
+      for(const holder of list){const balance=await getBkOutstandingBalance(holder.id);rows.push(balance);}
+      body.innerHTML=rows.map(r=>'<tr><td>'+accountingEscapeHtml(r.nba)+'</td><td>'+accountingEscapeHtml(r.nama)+'</td><td class="text-right">'+formatRp(r.legacy_reference_balance)+'</td><td class="text-right">'+formatRp(r.ledger_balance)+'</td><td>'+ (r.legacy_not_posted?'<span style="color:var(--warning)">Legacy · belum dijurnal</span>':r.ledger_balance>0?'Uang muka ledger':'Tidak ada saldo ledger') +'</td></tr>').join('');
+    }
+
+    async function loadBkAccountabilityHistory() {
+      const body=document.getElementById('bkAccountabilityHistory');if(!body)return;
+      const records=await getAll('bk_accountability'),holders=await getAllBkRekening(),map=new Map(holders.map(h=>[String(h.id),h]));
+      records.sort((a,b)=>String(b.tanggal||'').localeCompare(String(a.tanggal||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+      body.innerHTML=records.slice(0,30).map(r=>{
+        const h=map.get(String(r.bk_rekening_id)),kind=r.kind==='advance'?'Bon Kas':r.kind==='cash_return'?'Pengembalian':'Pertanggungjawaban';
+        const actions=r.status==='draft'?'<button class="btn btn-primary btn-sm" onclick="postManualJournal(\''+accountingEscapeHtml(r.journal_id)+'\')">Posting</button> <button class="btn btn-outline btn-sm" onclick="voidManualJournal(\''+accountingEscapeHtml(r.journal_id)+'\')">Batal</button>':'—';
+        return '<tr><td>'+accountingEscapeHtml(r.tanggal)+'</td><td>'+accountingEscapeHtml(h?h.nba+' — '+h.nama:r.holder_name||r.bk_rekening_id)+'</td><td>'+kind+'</td><td>'+accountingEscapeHtml(r.description)+'</td><td class="text-right">'+formatRp(r.amount)+'</td><td>'+accountingEscapeHtml(r.status)+'</td><td>'+actions+'</td></tr>';
+      }).join('')||'<tr><td colspan="7" class="empty">Belum ada aktivitas BK.</td></tr>';
+    }
+
+    function onBkAccountabilityKindChange() {
+      const kind=(document.getElementById('bkAccKind')||{}).value||'advance';
+      const cash=document.getElementById('bkAccCashAccountGroup'),expense=document.getElementById('bkAccExpenseGroup');
+      if(cash)cash.style.display=kind==='accountability'?'none':'block';
+      if(expense)expense.style.display=kind==='accountability'?'block':'none';
+    }
+
+    async function saveBkAccountabilityDraft(event) {
+      event.preventDefault();
+      const holderId=(document.getElementById('bkAccHolder')||{}).value||'';
+      const kind=(document.getElementById('bkAccKind')||{}).value||'advance';
+      const tanggal=(document.getElementById('bkAccDate')||{}).value||'';
+      const amount=Number((document.getElementById('bkAccAmount')||{}).value||0);
+      const description=((document.getElementById('bkAccDescription')||{}).value||'').trim();
+      const evidence=((document.getElementById('bkAccEvidence')||{}).value||'').trim();
+      const cashCode=(document.getElementById('bkAccCashAccount')||{}).value||'1101';
+      const expenseCode=(document.getElementById('bkAccExpenseAccount')||{}).value||'';
+      try {
+        if(!holderId)throw new Error('Pilih pemegang BK.');
+        if(!accountingIsValidDate(tanggal))throw new Error('Tanggal aktivitas BK tidak valid.');
+        if(!Number.isSafeInteger(amount)||amount<=0)throw new Error('Jumlah harus berupa rupiah bulat positif.');
+        if(!description)throw new Error('Uraian aktivitas wajib diisi.');
+        const holders=await getAllBkRekening(),holder=holders.find(r=>String(r.id)===String(holderId));
+        if(!holder)throw new Error('Pemegang BK tidak ditemukan.');
+        if(kind!=='advance'){
+          const balance=await getBkOutstandingBalance(holderId,tanggal);
+          if(amount>balance.ledger_balance)throw new Error('Jumlah melebihi saldo uang muka pada ledger ('+formatRp(balance.ledger_balance)+'). Saldo referensi legacy '+formatRp(balance.legacy_reference_balance)+' belum dijurnal; buat dan posting jurnal pembukaan terlebih dahulu.');
+        }
+        const id=accountingId('BKACC'),journalId=accountingId('JRN'),now=new Date().toISOString();
+        let lines=[];
+        if(kind==='advance'){
+          lines=[{account_code:'1106',bk_rekening_id:holderId,debit:amount,credit:0,memo:description},{account_code:cashCode,debit:0,credit:amount,memo:description}];
+        }else if(kind==='cash_return'){
+          lines=[{account_code:cashCode,debit:amount,credit:0,memo:description},{account_code:'1106',bk_rekening_id:holderId,debit:0,credit:amount,memo:description}];
+        }else if(kind==='accountability'){
+          const accounts=await getAll('chart_accounts'),expense=accounts.find(a=>String(a.code)===expenseCode&&a.active!==false&&a.classification_status!=='needs_review');
+          if(!expense||!String(expense.code).startsWith('61'))throw new Error('Pilih akun beban operasional yang aktif dan sudah diverifikasi.');
+          lines=[{account_code:expenseCode,debit:amount,credit:0,memo:description},{account_code:'1106',bk_rekening_id:holderId,debit:0,credit:amount,memo:description}];
+        }else throw new Error('Jenis aktivitas BK tidak dikenal.');
+        const record={id,bk_rekening_id:holderId,holder_nba:holder.nba,holder_name:holder.nama,tanggal,kind,amount,
+          cash_account_code:kind==='accountability'?null:cashCode,expense_account_code:kind==='accountability'?expenseCode:null,
+          description,evidence_reference:evidence,status:'draft',journal_id:journalId,created_at:now,created_by:'local-user'};
+        const result=await createJournalDraft({journal_id:journalId,tanggal,description:'BK · '+(kind==='advance'?'Bon Kas':kind==='cash_return'?'Pengembalian':'Pertanggungjawaban')+' · '+holder.nama+' · '+description,
+          source_type:'bk_accountability',source_id:id,source_key:'BKACC:'+id,lines,bk_accountability_record:record});
+        const form=document.getElementById('bkAccountabilityForm');if(form)form.reset();
+        const date=document.getElementById('bkAccDate');if(date)date.value=todayStr();
+        onBkAccountabilityKindChange();
+        toast('Draft aktivitas BK tersimpan. Periksa bukti lalu posting untuk mengubah saldo ledger.','success');
+        await loadAccountingWorkbench();await loadBkMasterTable();
+      }catch(e){toast('Aktivitas BK ditolak: '+e.message,'error');}
     }
 
     function openBkRekeningModal(data) {
@@ -7003,20 +7080,40 @@
         '</option>'
       ).join('');
     }
+    function journalBkHolderOptions(selected) {
+      return '<option value="">Pilih pemegang BK</option>' + _bkRekeningAccounts.map(r =>
+        '<option value="' + accountingEscapeHtml(r.id) + '"' + (String(r.id)===String(selected||'')?' selected':'') + '>' +
+        accountingEscapeHtml((r.nba||'')+' — '+(r.nama||'')) + '</option>'
+      ).join('');
+    }
+    function refreshJournalBkHolderOptions() {
+      document.querySelectorAll('#journalLinesEditor .journal-bk-holder').forEach(select=>{const selected=select.value;select.innerHTML=journalBkHolderOptions(selected);});
+    }
+    function toggleJournalBkHolder(accountSelect) {
+      const row=accountSelect.closest('.journal-line-row'),holder=row&&row.querySelector('.journal-bk-holder');
+      if(!holder)return;
+      const required=accountSelect.value==='1106';
+      holder.style.display=required?'block':'none';
+      holder.required=required;
+      if(!required)holder.value='';
+    }
     function addManualJournalLine(data) {
       const container = document.getElementById('journalLinesEditor');
       if (!container) return;
       const line = data || {};
       const row = document.createElement('div');
       row.className = 'journal-line-row';
-      row.style.cssText = 'display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(90px,1fr)) minmax(120px,1.2fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
-      row.innerHTML = '<select class="form-control journal-account" aria-label="Akun jurnal">' + accountingAccountOptions(line.account_code || '') + '</select>' +
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(90px,1fr)) minmax(120px,1.2fr) minmax(150px,1.3fr) auto;gap:7px;align-items:center;margin-bottom:8px;';
+      row.innerHTML = '<select class="form-control journal-account" aria-label="Akun jurnal" onchange="toggleJournalBkHolder(this)">' + accountingAccountOptions(line.account_code || '') + '</select>' +
         '<input class="form-control journal-debit" type="number" min="0" step="1" inputmode="numeric" placeholder="Debit" value="' + Number(line.debit || 0) + '" />' +
         '<input class="form-control journal-credit" type="number" min="0" step="1" inputmode="numeric" placeholder="Kredit" value="' + Number(line.credit || 0) + '" />' +
         '<input class="form-control journal-memo" type="text" maxlength="120" placeholder="Catatan baris" value="' + accountingEscapeHtml(line.memo || '') + '" />' +
+        '<select class="form-control journal-bk-holder" aria-label="Pemegang BK" style="display:none;">' + journalBkHolderOptions(line.bk_rekening_id || '') + '</select>' +
         '<button type="button" class="btn btn-outline btn-sm" aria-label="Hapus baris" onclick="this.closest(\'.journal-line-row\').remove()">×</button>';
       container.appendChild(row);
+      toggleJournalBkHolder(row.querySelector('.journal-account'));
     }
+
     function resetManualJournalForm() {
       const form = document.getElementById('manualJournalForm');
       const container = document.getElementById('journalLinesEditor');
@@ -7033,6 +7130,7 @@
         account_code: row.querySelector('.journal-account').value,
         debit: Number(row.querySelector('.journal-debit').value || 0),
         credit: Number(row.querySelector('.journal-credit').value || 0),
+        bk_rekening_id: row.querySelector('.journal-bk-holder').value || null,
         memo: row.querySelector('.journal-memo').value || ''
       }));
     }
@@ -7076,6 +7174,7 @@
         await postJournalEntry(id);
         toast('Jurnal berhasil diposting', 'success');
         await loadAccountingWorkbench();
+        await loadBkMasterTable();
       } catch (e) { toast('Posting ditolak: ' + e.message, 'error'); }
     }
     async function voidManualJournal(id) {
@@ -7107,7 +7206,7 @@
             tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Pembatalan draft gagal'));tx.onabort=()=>reject(tx.error||new Error('Draft tidak dapat dibatalkan'));
           } catch(e){if(tx){try{tx.abort();}catch(_){}}reject(e);}
         });
-        markDataChanged();toast('Draft jurnal dibatalkan', 'success');await loadAccountingWorkbench();await loadOpeningBalanceHistory();
+        markDataChanged();toast('Draft jurnal dibatalkan', 'success');await loadAccountingWorkbench();await loadOpeningBalanceHistory();await loadBkMasterTable();
       } catch(e){toast('Pembatalan draft gagal: '+e.message,'error');}
     }
 
@@ -7116,6 +7215,7 @@
       if (!host) return;
       try {
         _accountingAccounts = await getAll('chart_accounts');
+        _bkRekeningAccounts = await getAllBkRekening();
         const glSelect = document.getElementById('glAccountSelect');
         if (glSelect) {
           const selected = glSelect.value;
@@ -7124,6 +7224,7 @@
           ).join('');
           if (selected) glSelect.value = selected;
         }
+        refreshJournalBkHolderOptions();
         const lineHost = document.getElementById('journalLinesEditor');
         if (lineHost && !lineHost.children.length) { addManualJournalLine(); addManualJournalLine(); }
         const entries = await getAll('journal_entries');
