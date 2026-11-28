@@ -52,6 +52,7 @@ assert.ok(html.includes("bkRecord.kind==='accountability'&&!String(bkRecord.evid
 assert.ok(html.includes('Saldo uang muka BK saat posting tidak cukup'), 'Posting must recheck available BK balance to prevent duplicate accountability');
 assert.ok(html.includes("current.source_type==='reversal'"), 'Journal reversal must update linked subledger status');
 assert.ok(html.includes("status:'reversed'"), 'Reversed BK/opening records must be marked reversed');
+assert.ok(html.includes('balance.ledger_balance<reduction'), 'Reversing a BK advance must not create a negative subledger balance');
 assert.ok(html.includes('journalRefs.length||accountabilityRefs.length'), 'BK master with journal history must not be deletable');
 assert.ok(html.includes("bk_rekening_id: row.querySelector('.journal-bk-holder').value || null"), 'Manual journals must capture BK holder subledger id');
 assert.ok(html.includes('status:\'posted\',posted_at:now,journal_id:id'), 'Posting must update BK subledger status');
