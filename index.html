@@ -2820,6 +2820,27 @@
       const original=await getJournalEntryDetails(id);if(!original||original.status!=='posted')throw new Error('Hanya jurnal posted yang dapat dibalik.');const note=String(reason||'').trim();if(!note)throw new Error('Alasan pembalikan wajib diisi.');
       const draft=await createJournalDraft({tanggal:todayStr(),description:'Pembalikan jurnal '+id,source_type:'reversal',source_id:id,source_key:'REVERSAL:'+id,reversal_of:id,notes:note,lines:original.lines.map(line=>({account_code:line.account_code,debit:line.credit,credit:line.debit,party_id:line.party_id,bk_rekening_id:line.bk_rekening_id,payment_account_id:line.payment_account_id,memo:'Pembalikan: '+(line.memo||'')}))});if(draft.duplicate)return draft;return await postJournalEntry(draft.id);
     }
+    async function getBkOutstandingBalance(bkRekeningId,asOfDate) {
+      const id=String(bkRekeningId||''),record=(await getAllBkRekening()).find(r=>String(r.id)===id);
+      if(!record)throw new Error('Rekening BK tidak ditemukan.');
+      const cutoff=asOfDate||'9999-12-31';if(!accountingIsValidDate(cutoff))throw new Error('Tanggal saldo BK tidak valid.');
+      let balance=0;
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction('journal_lines','readonly'),range=IDBKeyRange.bound([id,'0000-01-01'],[id,cutoff]),req=tx.objectStore('journal_lines').index('bk_account_date').openCursor(range);
+        req.onsuccess=()=>{
+          const cursor=req.result;if(!cursor){resolve(true);return;}
+          const line=cursor.value;
+          if(line.status==='posted'&&line.account_code==='1106')balance+=(line.debit||0)-(line.credit||0);
+          cursor.continue();
+        };
+        req.onerror=()=>reject(req.error||new Error('Pembacaan subledger BK gagal'));
+        tx.onerror=()=>reject(tx.error||new Error('Query subledger BK gagal'));
+      });
+      return{bk_rekening_id:id,nba:record.nba,nama:record.nama,ledger_balance:balance,
+        legacy_reference_balance:Number(record.saldo_awal||0),as_of:cutoff,
+        legacy_not_posted:Number(record.saldo_awal||0)!==0&&balance===0};
+    }
+
     async function getGeneralLedgerRows(accountCode,from,to,limit) {
       const code=String(accountCode||'').trim(), accounts=await getAll('chart_accounts'), account=accounts.find(a=>String(a.code)===code);
       if(!account)throw new Error('Akun Buku Besar tidak ditemukan: '+code);
