@@ -147,7 +147,9 @@ assert.throws(() => validate([
   { account_code: '1101', debit: 0, credit: 500 }
 ], accounts), /Pilih pemegang Bon Kas/);
 
-assert.ok(html.includes("const bk=await getAllBkRekening()"), 'Backup must fail closed when the BK master cannot be read');
+assert.ok(html.includes("if(!db.objectStoreNames.contains('bk_rekening'))throw new Error('Store master BK tidak tersedia; backup dibatalkan.')"), 'Backup must fail closed when the BK master store is missing');
+assert.ok(html.includes("const bk=await getAll('bk_rekening')"), 'Backup must read the BK master directly so read errors propagate');
+assert.ok(!html.includes("const bk=await getAllBkRekening()"), 'Backup must not use the BK helper that swallows read errors');
 assert.ok(!html.includes("try{bk=await getAllBkRekening();}catch(e){}"), 'Backup must not silently omit BK master data');
 
 
