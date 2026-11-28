@@ -150,4 +150,10 @@ assert.throws(() => validate([
 assert.ok(html.includes("const bk=await getAllBkRekening()"), 'Backup must fail closed when the BK master cannot be read');
 assert.ok(!html.includes("try{bk=await getAllBkRekening();}catch(e){}"), 'Backup must not silently omit BK master data');
 
+
+assert.ok(html.includes("Sheet transaksi tidak ditemukan. Gunakan nama sheet DATA_TRANSAKSI atau Transaksi"), 'Importer must reject workbooks without an explicitly recognized transaction sheet');
+assert.ok(!html.includes("if (!sheetName) sheetName = wb.SheetNames[0]"), 'Importer must never silently fall back to the first workbook sheet');
+assert.ok(html.includes("const headerRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false })"), 'Importer must inspect the transaction sheet header row');
+assert.ok(html.includes("const missingHeaders = requiredHeaders.filter"), 'Importer must reject workbooks missing required transaction columns');
+
 console.log('Ledger tests passed: 15 validator/date cases plus journal, BK subledger, reversal and safety guards.');
