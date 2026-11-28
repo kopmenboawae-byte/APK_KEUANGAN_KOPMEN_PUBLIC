@@ -4345,16 +4345,18 @@
       `;
 
       const piutSaldo = Math.max(0, piutang);
+      const uangMukaPelanggan = Math.max(0, -piutang);
       const dashPiut = document.getElementById('dashPiutang');
       if (dashPiut) {
         dashPiut.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
             <div>
-              <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em;">Saldo berjalan (estimasi)</div>
+              <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em;">Saldo piutang positif (estimasi)</div>
               <div style="font-size:1.25rem;font-weight:700;color:var(--primary);">${formatRp(piutSaldo)}</div>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="showPage('settings')">Edit di Pengaturan</button>
           </div>
+          ${uangMukaPelanggan > 0 ? `<p style="font-size:0.76rem;color:var(--warning);margin:8px 0 0;">PERHATIAN: terindikasi uang muka/pembayaran pelanggan berlebih sebesar ${formatRp(uangMukaPelanggan)}. Periksa pihak dan bukti transaksi; jangan dianggap piutang nol tanpa penelusuran.</p>` : ''}
           <p style="font-size:0.72rem;color:var(--muted);margin-top:8px;margin-bottom:0;">
             Perhitungan mengikuti saldo awal tersimpan + penjualan kredit − pembayaran bon. Verifikasi saldo awal di <strong>Pengaturan</strong> sebelum menggunakan angka ini sebagai dasar laporan.
           </p>`;
