@@ -53,6 +53,26 @@ const calc=vm.runInNewContext('('+source+')',ctx);
  assert.ok(blocked.readiness.reasons.some(x=>x.includes('1/2')));
  assert.equal(blocked.income_statement.net_profit,400,'draft journals must not affect ledger report');
  const page=html.slice(html.indexOf('async function loadLaporan()'),html.indexOf('async function exportLaporanExcel()'));
- assert.ok(page.includes('renderLedgerReportReadiness(from,to)')&&page.includes('calcFinancials(from, to)'),'legacy reports must remain alongside ledger preview');
+ assert.ok(page.includes('renderLedgerReportReadiness(from,to,ledgerResult)')&&page.includes('calcFinancials(from, to)'),'legacy reports must remain alongside ledger preview');
+
+ const builderStart=html.indexOf('function buildLedgerLaporanRows('),builderEnd=html.indexOf('async function loadLaporan(',builderStart);
+ assert.ok(builderStart>=0&&builderEnd>builderStart,'ledger report row builder missing');
+ const builderSource=html.slice(builderStart,builderEnd).trim().replace('function buildLedgerLaporanRows(','function(');
+ const builder=vm.runInNewContext('('+builderSource+')',{});
+ const pnlRows=builder(result,'labarugi').rows;
+ assert.equal(pnlRows.find(x=>x.label==='Laba Bersih').value,400);
+ const balanceRows=builder(result,'neraca').rows;
+ assert.equal(balanceRows.find(x=>x.label==='Total Aset').value,1400);
+ const cashRows=builder(result,'arus').rows;
+ assert.equal(cashRows.find(x=>x.label==='Kenaikan / (Penurunan) Kas').value,800);
+ const explanationRows=builder(result,'penjelasan').rows;
+ assert.ok(explanationRows.some(x=>String(x.note||'').includes('Saldo pembuka posted: Ya')));
+ const loadStart=html.indexOf('async function loadLaporan()'),loadEnd=html.indexOf('async function exportLaporanExcel()',loadStart);
+ const loadSource=html.slice(loadStart,loadEnd);
+ assert.ok(loadSource.includes('ledgerResult.readiness.ready')&&loadSource.includes('buildLedgerLaporanRows')&&loadSource.includes('buildLaporanRows'),'official report basis must switch only after readiness');
+ assert.ok(loadSource.includes("reportBasis=ledgerActive?'ledger_posted_only':'legacy_transactions'"));
+ assert.ok(html.includes('Basis: Ledger · Jurnal Posted')&&html.includes('Basis: Transaksi Legacy'),'basis must be visible in report');
+ assert.ok(html.includes('const basisText=L.basis==='),'basis must be included in exports');
+
  console.log('Ledger report engine tests: posted-only P&L, balance sheet, cash flow, trial balance, draft exclusion and readiness gate passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
