@@ -5664,10 +5664,13 @@
           const valid = pending.filter(row => row._status === 'ok').length;
           const warnings = pending.filter(row => row._status === 'warn').length;
           const errors = pending.filter(row => row._status === 'error').length;
-          const totalNilai = batch.reduce((sum,row) => sum + (Number(row.nilai)||0),0);
-          const totalLaba = batch.reduce((sum,row) => sum + (Number(row.laba)||0),0);
-          const accounted = committed + pending.length + rejected + duplicates;
-          const discrepancy = batch.length - accounted;
+          const skippedDuplicates = Number(batch[0].duplicate_skipped_count) || 0;
+          const sourceCount = Number(batch[0].source_row_count) || (batch.length + skippedDuplicates);
+          const totalNilai = batch.reduce((sum,row) => sum + (Number(row.nilai)||0),0) + (Number(batch[0].duplicate_skipped_nilai)||0);
+          const totalLaba = batch.reduce((sum,row) => sum + (Number(row.laba)||0),0) + (Number(batch[0].duplicate_skipped_laba)||0);
+          const fingerprint = String(batch[0].import_source || '—');
+          const accounted = committed + pending.length + rejected + duplicates + skippedDuplicates;
+          const discrepancy = sourceCount - accounted;
           const subtotal = (field) => {
             const map = new Map();
             batch.forEach(row => { const key = String(row[field] || '—'); const item = map.get(key) || {count:0,nilai:0,laba:0}; item.count++; item.nilai += Number(row.nilai)||0; item.laba += Number(row.laba)||0; map.set(key,item); });
@@ -5693,10 +5696,10 @@
           }).join('');
           const safeBatch = esc(batchId);
           return '<div class="card" style="margin:8px 0;padding:10px;">' +
-            '<strong>'+esc(batch[0].source_file_name||'Workbook historis')+'</strong><div style="font-size:.74rem;color:var(--muted);">Batch '+safeBatch+' · Sumber tersimpan '+batch.length+' baris</div>' +
+            '<strong>'+esc(batch[0].source_file_name||'Workbook historis')+'</strong><div style="font-size:.74rem;color:var(--muted);">Batch '+safeBatch+' · Baris sumber '+sourceCount+' · Tersimpan '+batch.length+' · Duplikat dilewati '+skippedDuplicates+'</div><div style="font-size:.68rem;color:var(--muted);overflow-wrap:anywhere;">Fingerprint file: '+esc(fingerprint)+'</div>' +
             '<div class="grid-4" style="margin:8px 0;gap:6px;"><div class="stat"><div class="label">Menunggu</div><div class="value">'+pending.length+'</div></div><div class="stat"><div class="label">Valid / Exception</div><div class="value">'+valid+' / '+(warnings+errors)+'</div></div><div class="stat"><div class="label">Committed</div><div class="value">'+committed+'</div></div><div class="stat"><div class="label">Ditolak / Duplikat</div><div class="value">'+rejected+' / '+duplicates+'</div></div></div>' +
-            '<p style="font-size:.78rem;margin:5px 0;">Total Nilai: <strong>'+formatRp(totalNilai)+'</strong> · Total Laba: <strong>'+formatRp(totalLaba)+'</strong></p>' +
-            '<p style="font-size:.72rem;color:'+(discrepancy===0?'var(--success)':'var(--danger)')+';">Kontrol baris: sumber '+batch.length+' = committed '+committed+' + pending '+pending.length+' + rejected '+rejected+' + duplikat '+duplicates+' · Selisih '+discrepancy+'</p>' +
+            '<p style="font-size:.78rem;margin:5px 0;">Total Nilai sumber (termasuk duplikat yang dilewati): <strong>'+formatRp(totalNilai)+'</strong> · Total Laba: <strong>'+formatRp(totalLaba)+'</strong></p>' +
+            '<p style="font-size:.72rem;color:'+(discrepancy===0?'var(--success)':'var(--danger)')+';">Kontrol baris: sumber '+sourceCount+' = committed '+committed+' + pending '+pending.length+' + rejected '+rejected+' + duplikat saat review '+duplicates+' + duplikat dilewati '+skippedDuplicates+' · Selisih '+discrepancy+'</p>' +
             '<details><summary style="cursor:pointer;font-size:.78rem;font-weight:650;">Rincian subtotal per jenis, status & lokasi</summary>' +
             '<div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Jenis</th><th>Baris</th><th>Nilai</th><th>Laba</th></tr></thead><tbody>'+subtotal('jenis')+'</tbody></table></div>' +
             '<div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Status transaksi</th><th>Baris</th><th>Nilai</th><th>Laba</th></tr></thead><tbody>'+subtotal('transaction_status')+'</tbody></table></div>' +
@@ -5735,6 +5738,8 @@
         if (jenis==='BON KAS' || jenis==='PEMBAYARAN BK') {
           bkRekening = (await getAllBkRekening()).find(item=>String(item.id)===bkId);
           if (!bkRekening) throw new Error('Pemetaan rekening BK wajib dipilih dan harus ada di master.');
+          const parsedBk = parseBkKeterangan(keterangan);
+          if (parsedBk && normNba(bkRekening.nba) !== parsedBk.key) throw new Error('NBA pada keterangan sumber tidak sama dengan rekening BK yang dipilih. Periksa pemetaan atau koreksi keterangan berdasarkan bukti.');
         }
         const existing = await new Promise((resolve,reject)=>{const tx=db.transaction('import_staging','readonly'),req=tx.objectStore('import_staging').get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});
         if (!existing || existing.status!=='pending_review') throw new Error('Baris tidak lagi menunggu review.');
@@ -5867,8 +5872,11 @@
         stableOccurrences.set(signature, occurrence);
         existingIds.add(makeImportRowId(signature, occurrence));
       });
+      const duplicateRows = importRows.filter(row => existingIds.has(String(row.id)));
       const pending = importRows.filter(row => !existingIds.has(String(row.id)));
-      const skipped = importRows.length - pending.length;
+      const skipped = duplicateRows.length;
+      const skippedNilai = duplicateRows.reduce((sum,row) => sum + (Number(row.nilai)||0),0);
+      const skippedLaba = duplicateRows.reduce((sum,row) => sum + (Number(row.laba)||0),0);
       if (!pending.length) {
         toast('Semua baris sudah berada di transaksi atau staging. Periksa batch review yang tersimpan.', 'info');
         document.getElementById('btnDoImport').style.display = 'none';
@@ -5887,7 +5895,7 @@
           tx = db.transaction('import_staging', 'readwrite');
           const store = tx.objectStore('import_staging');
           pending.forEach(row => {
-            const stagedRow = {...row,transaction_status:row.status,batch_id:batchId,status:'pending_review',review_status:row._status,source_row:row.source_row || null,staged_at:now};
+            const stagedRow = {...row,transaction_status:row.status,batch_id:batchId,status:'pending_review',review_status:row._status,source_row:row.source_row || null,staged_at:now,source_row_count:importRows.length,duplicate_skipped_count:skipped,duplicate_skipped_nilai:skippedNilai,duplicate_skipped_laba:skippedLaba};
             store.add(stagedRow);
           });
           tx.oncomplete = () => resolve(true);
