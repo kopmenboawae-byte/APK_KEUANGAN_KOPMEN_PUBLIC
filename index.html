@@ -5963,7 +5963,7 @@
     async function buildBackupPayload() {
       const trx=await getAll('transaksi'), arsip=db.objectStoreNames.contains('transaksi_arsip')?await getAll('transaksi_arsip'):[];
       const stocktakes=db.objectStoreNames.contains('stok_opname')?await getAll('stok_opname'):[], audit=db.objectStoreNames.contains('audit_log')?await getAll('audit_log'):[];
-      const set=(await getAll('settings')).filter(s=>s.id!==FS_HANDLE_ID);const bk=await getAllBkRekening();
+      const set=(await getAll('settings')).filter(s=>s.id!==FS_HANDLE_ID);if(!db.objectStoreNames.contains('bk_rekening'))throw new Error('Store master BK tidak tersedia; backup dibatalkan.');const bk=await getAll('bk_rekening');
       const ledgerData={};for(const name of LEDGER_BACKUP_STORES)ledgerData[name]=db.objectStoreNames.contains(name)?await getAll(name):[];
       return {version:APP_VERSION,exported_at:new Date().toISOString(),type:'ludju-backup',coverage:['transaksi','transaksi_arsip','audit_log','bk_rekening','settings','stok_opname',...LEDGER_BACKUP_STORES],settings:set,transaksi:trx,transaksi_arsip:arsip,audit_log:audit,bk_rekening:bk,stok_opname:stocktakes,...ledgerData};
     }
