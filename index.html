@@ -5642,42 +5642,116 @@
       if (!host) return;
       try {
         const rows = await getAll('import_staging');
-        const pending = rows.filter(row => row && row.status === 'pending_review');
         const groups = new Map();
-        pending.forEach(row => {
-          const key = String(row.batch_id || 'unknown');
+        rows.filter(row => row && row.batch_id).forEach(row => {
+          const key = String(row.batch_id);
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key).push(row);
         });
-        const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        })[ch]);
+        const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        const bkRows = await getAllBkRekening();
+        const jenisOptions = JENIS_LIST.map(value => '<option value="' + esc(value) + '">' + esc(value) + '</option>').join('');
+        const bkOptions = '<option value="">Pilih rekening BK</option>' + bkRows.map(item => '<option value="' + esc(item.id) + '">' + esc(item.nba || '') + ' · ' + esc(item.nama || '') + '</option>').join('');
         if (!groups.size) {
-          host.innerHTML = '<p style="font-size:.8rem;color:var(--muted);">Tidak ada baris yang menunggu review. Riwayat batch yang sudah diputuskan tetap tersimpan di database.</p>';
+          host.innerHTML = '<p style="font-size:.8rem;color:var(--muted);">Belum ada batch staging tersimpan.</p>';
           return;
         }
-        host.innerHTML = '<div class="card-title">Batch menunggu review</div>' + Array.from(groups.entries()).map(([batchId, batch]) => {
-          const valid = batch.filter(row => row._status === 'ok').length;
-          const warnings = batch.filter(row => row._status === 'warn').length;
-          const errors = batch.filter(row => row._status === 'error').length;
-          const total = batch.reduce((sum, row) => sum + (Number(row.nilai) || 0), 0);
-          const first = batch[0] || {};
-          const table = batch.map(row => {
-            const state = row._status || 'warn';
-            const action = '<button class="btn btn-outline btn-sm" type="button" onclick="rejectStagedImportRow(\'' + esc(row.id) + '\')">Tolak baris</button>';
-            return '<tr><td>' + esc(row.source_row || '—') + '</td><td>' + esc(row.tanggal || '—') + '</td><td>' + esc(row.jenis || '—') + '</td><td class="text-right">' + formatRp(Number(row.nilai) || 0) + '</td><td>' + esc(state) + '<div style="font-size:.7rem;color:var(--muted);">' + esc(row._msg || '') + '</div></td><td>' + action + '</td></tr>';
+        host.innerHTML = '<div class="card-title">Rekonsiliasi & riwayat batch impor</div>' + Array.from(groups.entries()).sort((a,b) => String(b[1][0].staged_at||'').localeCompare(String(a[1][0].staged_at||''))).map(([batchId,batch]) => {
+          const pending = batch.filter(row => row.status === 'pending_review');
+          const committed = batch.filter(row => row.status === 'committed').length;
+          const rejected = batch.filter(row => row.status === 'rejected').length;
+          const duplicates = batch.filter(row => row.status === 'duplicate').length;
+          const valid = pending.filter(row => row._status === 'ok').length;
+          const warnings = pending.filter(row => row._status === 'warn').length;
+          const errors = pending.filter(row => row._status === 'error').length;
+          const totalNilai = batch.reduce((sum,row) => sum + (Number(row.nilai)||0),0);
+          const totalLaba = batch.reduce((sum,row) => sum + (Number(row.laba)||0),0);
+          const accounted = committed + pending.length + rejected + duplicates;
+          const discrepancy = batch.length - accounted;
+          const subtotal = (field) => {
+            const map = new Map();
+            batch.forEach(row => { const key = String(row[field] || '—'); const item = map.get(key) || {count:0,nilai:0,laba:0}; item.count++; item.nilai += Number(row.nilai)||0; item.laba += Number(row.laba)||0; map.set(key,item); });
+            return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0])).map(([key,item]) => '<tr><td>'+esc(key)+'</td><td class="text-right">'+item.count+'</td><td class="text-right">'+formatRp(item.nilai)+'</td><td class="text-right">'+formatRp(item.laba)+'</td></tr>').join('');
+          };
+          const table = pending.map(row => {
+            const state = row._status || 'error';
+            const transactionStatus = row.transaction_status || 'TUNAI';
+            const bkId = row.bk_rekening_id || '';
+            const action = '<details style="min-width:250px;"><summary style="cursor:pointer;color:var(--primary);font-weight:650;">Perbaiki / tinjau</summary>' +
+              '<form onsubmit="saveStagedImportCorrection(event,\''+esc(row.id)+'\')" style="padding:8px 0;">' +
+              '<label style="display:block;font-size:.72rem;">Tanggal<input class="form-control form-control-sm" type="date" name="tanggal" required value="'+esc(row.tanggal||'')+'"></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Jenis<select class="form-control form-control-sm" name="jenis" required>'+jenisOptions.replace('value="'+esc(row.jenis||'')+'"','value="'+esc(row.jenis||'')+'" selected')+'</select></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Status transaksi<select class="form-control form-control-sm" name="transaction_status"><option value="TUNAI" '+(transactionStatus==='TUNAI'?'selected':'')+'>TUNAI</option><option value="KREDIT" '+(transactionStatus==='KREDIT'?'selected':'')+'>KREDIT</option></select></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Lokasi<select class="form-control form-control-sm" name="lokasi">'+['TOKO','PASAR','LELANG','GUDANG'].map(v=>'<option value="'+v+'" '+(String(row.lokasi||'').toUpperCase()===v?'selected':'')+'>'+v+'</option>').join('')+'</select></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Nilai (Rp)<input class="form-control form-control-sm" type="number" min="0" step="1" name="nilai" required value="'+esc(Number(row.nilai)||0)+'"></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Laba (Rp)<input class="form-control form-control-sm" type="number" min="0" step="1" name="laba" value="'+esc(Number(row.laba)||0)+'"></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Keterangan<textarea class="form-control form-control-sm" name="keterangan" rows="2">'+esc(row.keterangan||'')+'</textarea></label>' +
+              '<label style="display:block;font-size:.72rem;margin-top:5px;">Pemetaan rekening BK<select class="form-control form-control-sm" name="bk_rekening_id">'+bkOptions.replace('value="'+esc(bkId)+'"','value="'+esc(bkId)+'" selected')+'</select></label>' +
+              '<p style="font-size:.68rem;color:var(--muted);margin:5px 0;">Data sumber asli tidak diubah. Koreksi disimpan bersama riwayat perubahan dan akan divalidasi ulang.</p>' +
+              '<button class="btn btn-primary btn-sm" type="submit">Simpan koreksi & validasi</button></form></details>';
+            return '<tr><td>'+esc(row.source_row||'—')+'</td><td>'+esc(row.tanggal||'—')+'</td><td>'+esc(row.jenis||'—')+'</td><td class="text-right">'+formatRp(Number(row.nilai)||0)+'</td><td>'+esc(state)+'<div style="font-size:.7rem;color:var(--muted);">'+esc(row._msg||'')+'</div></td><td>'+action+'<button class="btn btn-outline btn-sm" type="button" style="margin-top:5px;" onclick="rejectStagedImportRow(\''+esc(row.id)+'\')">Tolak</button></td></tr>';
           }).join('');
+          const safeBatch = esc(batchId);
           return '<div class="card" style="margin:8px 0;padding:10px;">' +
-            '<strong>' + esc(first.source_file_name || 'Workbook historis') + '</strong>' +
-            '<div style="font-size:.78rem;color:var(--muted);margin:4px 0;">Batch ' + esc(batchId) + ' · ' + batch.length + ' baris · ' + valid + ' valid · ' + warnings + ' warning · ' + errors + ' error · Total nilai ' + formatRp(total) + '</div>' +
-            '<div class="table-wrap" style="max-height:240px;"><table><thead><tr><th>Baris</th><th>Tanggal</th><th>Jenis</th><th>Nilai</th><th>Status / alasan</th><th>Tindakan</th></tr></thead><tbody>' + table + '</tbody></table></div>' +
-            '<button class="btn btn-primary btn-sm" type="button" style="margin-top:8px;" onclick="approveStagedImportBatch(\'' + esc(batchId) + '\')" ' + (valid ? '' : 'disabled') + '>Setujui dan pindahkan ' + valid + ' baris valid</button>' +
-            ((warnings || errors) ? '<p style="font-size:.75rem;color:var(--warning);margin:6px 0 0;">' + (warnings + errors) + ' baris exception tetap ditahan sampai diperbaiki atau ditolak satu per satu.</p>' : '') +
+            '<strong>'+esc(batch[0].source_file_name||'Workbook historis')+'</strong><div style="font-size:.74rem;color:var(--muted);">Batch '+safeBatch+' · Sumber tersimpan '+batch.length+' baris</div>' +
+            '<div class="grid-4" style="margin:8px 0;gap:6px;"><div class="stat"><div class="label">Menunggu</div><div class="value">'+pending.length+'</div></div><div class="stat"><div class="label">Valid / Exception</div><div class="value">'+valid+' / '+(warnings+errors)+'</div></div><div class="stat"><div class="label">Committed</div><div class="value">'+committed+'</div></div><div class="stat"><div class="label">Ditolak / Duplikat</div><div class="value">'+rejected+' / '+duplicates+'</div></div></div>' +
+            '<p style="font-size:.78rem;margin:5px 0;">Total Nilai: <strong>'+formatRp(totalNilai)+'</strong> · Total Laba: <strong>'+formatRp(totalLaba)+'</strong></p>' +
+            '<p style="font-size:.72rem;color:'+(discrepancy===0?'var(--success)':'var(--danger)')+';">Kontrol baris: sumber '+batch.length+' = committed '+committed+' + pending '+pending.length+' + rejected '+rejected+' + duplikat '+duplicates+' · Selisih '+discrepancy+'</p>' +
+            '<details><summary style="cursor:pointer;font-size:.78rem;font-weight:650;">Rincian subtotal per jenis, status & lokasi</summary>' +
+            '<div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Jenis</th><th>Baris</th><th>Nilai</th><th>Laba</th></tr></thead><tbody>'+subtotal('jenis')+'</tbody></table></div>' +
+            '<div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Status transaksi</th><th>Baris</th><th>Nilai</th><th>Laba</th></tr></thead><tbody>'+subtotal('transaction_status')+'</tbody></table></div>' +
+            '<div class="table-wrap" style="margin-top:6px;"><table><thead><tr><th>Lokasi</th><th>Baris</th><th>Nilai</th><th>Laba</th></tr></thead><tbody>'+subtotal('lokasi')+'</tbody></table></div></details>' +
+            (pending.length ? '<div class="table-wrap" style="max-height:320px;margin-top:8px;"><table><thead><tr><th>Baris</th><th>Tanggal</th><th>Jenis</th><th>Nilai</th><th>Status / alasan</th><th>Koreksi</th></tr></thead><tbody>'+table+'</tbody></table></div>' : '<p style="font-size:.78rem;color:var(--success);margin-top:8px;">Tidak ada baris yang menunggu review pada batch ini.</p>') +
+            (valid ? '<button class="btn btn-primary btn-sm" type="button" style="margin-top:8px;" onclick="approveStagedImportBatch(\''+safeBatch+'\')">Setujui dan pindahkan '+valid+' baris valid</button>' : '') +
             '</div>';
         }).join('');
       } catch (error) {
         host.textContent = 'Gagal memuat staging: ' + error.message;
       }
+    }
+
+    async function saveStagedImportCorrection(event,rowId) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const value = name => form.elements.namedItem(name).value;
+      const id = String(rowId || '');
+      try {
+        const tanggal = value('tanggal');
+        const jenis = String(value('jenis')||'').trim();
+        const transactionStatus = String(value('transaction_status')||'').toUpperCase();
+        const lokasi = String(value('lokasi')||'').toUpperCase();
+        const nilai = Number(value('nilai'));
+        const laba = Number(value('laba')||0);
+        const keterangan = String(value('keterangan')||'').trim();
+        const bkId = String(value('bk_rekening_id')||'');
+        if (!accountingIsValidDate(tanggal)) throw new Error('Tanggal wajib valid.');
+        if (!JENIS_LIST.includes(jenis)) throw new Error('Jenis transaksi tidak dikenal.');
+        if (!['TUNAI','KREDIT'].includes(transactionStatus)) throw new Error('Status transaksi wajib TUNAI atau KREDIT.');
+        if (!['PENJUALAN','PEMBELIAN BARANG'].includes(jenis) && transactionStatus !== 'TUNAI') throw new Error('Jenis transaksi ini hanya boleh berstatus TUNAI.');
+        if (!['TOKO','PASAR','LELANG','GUDANG'].includes(lokasi)) throw new Error('Lokasi transaksi tidak valid.');
+        if (!Number.isSafeInteger(nilai) || nilai < 0) throw new Error('Nilai harus rupiah bulat dan tidak negatif.');
+        if (!Number.isSafeInteger(laba) || laba < 0 || (jenis==='PENJUALAN' && laba>nilai) || (jenis!=='PENJUALAN' && laba!==0)) throw new Error('Laba tidak valid untuk jenis/nilai transaksi ini.');
+        let bkRekening = null;
+        if (jenis==='BON KAS' || jenis==='PEMBAYARAN BK') {
+          bkRekening = (await getAllBkRekening()).find(item=>String(item.id)===bkId);
+          if (!bkRekening) throw new Error('Pemetaan rekening BK wajib dipilih dan harus ada di master.');
+        }
+        const existing = await new Promise((resolve,reject)=>{const tx=db.transaction('import_staging','readonly'),req=tx.objectStore('import_staging').get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});
+        if (!existing || existing.status!=='pending_review') throw new Error('Baris tidak lagi menunggu review.');
+        const nextStatus = nilai===0 ? 'warn' : 'ok';
+        const nextMessage = nilai===0 ? 'Nilai 0; perlu konfirmasi bisnis' : '';
+        const before = {tanggal:existing.tanggal,jenis:existing.jenis,transaction_status:existing.transaction_status,lokasi:existing.lokasi,nilai:existing.nilai,laba:existing.laba,keterangan:existing.keterangan,bk_rekening_id:existing.bk_rekening_id,_status:existing._status,_msg:existing._msg};
+        const after = {tanggal,jenis,transaction_status:transactionStatus,lokasi,nilai,laba,keterangan,bk_rekening_id:bkRekening?bkRekening.id:null,bk_rekening_nba:bkRekening?bkRekening.nba:null,_status:nextStatus,_msg:nextMessage};
+        const now = new Date().toISOString();
+        const updated = {...existing,...after,correction_history:[...(existing.correction_history||[]),{changed_at:now,reviewer:'local-user',before,after}],review_status:nextStatus,reviewed_at:now};
+        const stores=['import_staging'];
+        if (db.objectStoreNames.contains('change_history')) stores.push('change_history');
+        if (db.objectStoreNames.contains('audit_log')) stores.push('audit_log');
+        await new Promise((resolve,reject)=>{let tx;try{tx=db.transaction(stores,'readwrite');tx.objectStore('import_staging').put(updated);if(stores.includes('change_history'))tx.objectStore('change_history').add({target_type:'import_staging',target_id:id,changed_at:now,action:'CORRECT_IMPORT_STAGING',before,after,reviewer:'local-user'});if(stores.includes('audit_log'))tx.objectStore('audit_log').add({waktu:now,aksi:'KOREKSI_IMPORT_STAGING',target_id:id,keterangan:'Baris staging dikoreksi dan divalidasi ulang: '+nextStatus});tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error('Penyimpanan koreksi gagal'));tx.onabort=()=>reject(tx.error||new Error('Koreksi dibatalkan'));}catch(error){if(tx){try{tx.abort();}catch(_){}}reject(error);}});
+        markDataChanged();
+        await loadImportStagingReview();
+        toast('Koreksi tersimpan. Status validasi: '+nextStatus+'. Sumber asli tetap dipertahankan.',nextStatus==='ok'?'success':'info');
+      } catch(error) { toast('Koreksi tidak disimpan: '+error.message,'error'); }
     }
 
     async function rejectStagedImportRow(rowId) {
