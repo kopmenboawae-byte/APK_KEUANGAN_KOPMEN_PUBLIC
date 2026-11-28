@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "index.html"
+      - "tests/**"
       - ".github/workflows/validate-app.yml"
   workflow_dispatch:
 
@@ -50,3 +51,6 @@ jobs:
             node --check "$file"
           done
           echo "Semua inline JavaScript lolos pemeriksaan sintaks."
+
+      - name: Test ledger journal validator
+        run: node tests/ledger-engine.test.cjs
