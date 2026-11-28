@@ -2738,6 +2738,7 @@
       if(detail.source_type==='bk_accountability'&&detail.source_id){
         const bkRecord=(await getAll('bk_accountability')).find(r=>String(r.id)===String(detail.source_id));
         if(!bkRecord)throw new Error('Catatan subledger BK tidak ditemukan.');
+        if(bkRecord.status!=='draft')throw new Error('Catatan subledger BK tidak lagi berstatus draft.');
         if(bkRecord.kind==='accountability'&&!String(bkRecord.evidence_reference||'').trim())throw new Error('Pertanggungjawaban beban wajib memiliki referensi bukti sebelum posting.');
         if(bkRecord.kind!=='advance'){
           const outstanding=await getBkOutstandingBalance(bkRecord.bk_rekening_id,detail.tanggal);
@@ -2905,7 +2906,7 @@
       const previous=versions.filter(v=>v.status!=='superseded').sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date)))[0]||null;
       const id=accountingId('OPEN'),journalId=accountingId('JRN'),now=new Date().toISOString();
       const record={id,effective_date:date,reason,status:'draft',previous_version_id:previous?previous.id:null,
-        balances:payload.balances||null,journal_id:journalId,debit_total:checked.debit_total,credit_total:checked.credit_total,
+        balances:payload.balances||null,changed_fields:checked.lines.map(line=>line.account_code+(line.bk_rekening_id?':'+line.bk_rekening_id:'')),journal_id:journalId,debit_total:checked.debit_total,credit_total:checked.credit_total,
         created_at:now,created_by:payload.created_by||'local-user'};
       const journal=await createJournalDraft({journal_id:journalId,tanggal:date,description:'Jurnal pembukaan saldo awal',
         source_type:'opening_balance',source_id:id,source_key:'OPENING:'+id,notes:reason,lines:payload.lines,
