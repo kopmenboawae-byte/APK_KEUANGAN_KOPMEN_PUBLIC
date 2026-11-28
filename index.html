@@ -3099,7 +3099,6 @@
         anggota: parseAngkaID((document.getElementById('pdAnggota')||{}).value)
       };
       const total = Object.values(pd).reduce((a,b) => a + b, 0);
-      const previous = settings.piutangDetail || null;
       settings.piutangDetail = pd;
       // Rincian ini hanya breakdown referensi; tidak boleh mengubah saldo awal piutang.
       settings.id = 'app';
